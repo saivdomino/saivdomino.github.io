@@ -1,6 +1,7 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabaseConfig.js';
 import { t, lang, setLang } from './i18n.js';
+import { sfx, isOn, toggle } from './sound.js';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = i => document.getElementById(i);
@@ -11,7 +12,7 @@ let me = null, profile = null, G = null, seat = 0, ch = null, host = false, code
 let cur = 'auth', T, tt, quiet = false, savedMid = null, graceMv = -1, lobby = [], assign = {}, pend = null;
 
 /* ---------- views / history ---------- */
-const show = v => { cur = v; document.querySelectorAll('.v').forEach(e => e.classList.toggle('hidden', e.id !== 'v-' + v)); };
+const show = v => { cur = v; document.body.dataset.v = v; document.querySelectorAll('.v').forEach(e => e.classList.toggle('hidden', e.id !== 'v-' + v)); };
 const toast = m => { const e = $('toast'); e.textContent = m; e.classList.remove('hidden'); clearTimeout(tt); tt = setTimeout(() => e.classList.add('hidden'), 2500); };
 function leave() { clearTimeout(T); if (ch) { sb.removeChannel(ch); ch = null; } G = null; host = false; show('menu'); }
 window.onpopstate = () => {
@@ -39,12 +40,12 @@ async function loadProfile() {
   const { data } = await sb.from('profiles').select('*').eq('id', me.id).single();
   profile = data; if (!data) return;
   const n = data.wins + data.losses, r = n ? Math.round(100 * data.wins / n) : 0;
-  $('stats').innerHTML = `<b>${esc(data.username)}</b> · ${t('wins')} ${data.wins} · ${t('losses')} ${data.losses} · ${t('score')} ${data.total_score} · ${r}%`;
+  $('stats').innerHTML = `<div class="who">${esc(data.username)}</div><div class="stats">${[[t('wins'), data.wins], [t('losses'), data.losses], [t('score'), data.total_score], [t('rate'), r + '%']].map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('')}</div>`;
 }
 $('toLb').onclick = async () => {
   show('lb');
   const { data } = await sb.from('leaderboard').select('*');
-  $('lbbody').innerHTML = (data || []).map((p, i) => `<tr><td>${i + 1}</td><td>${esc(p.username)}</td><td>${p.wins}</td><td>${p.losses}</td><td>${p.total_score}</td><td>${p.win_rate}%</td></tr>`).join('');
+  $('lbbody').innerHTML = (data || []).map((p, i) => `<tr><td>${['🥇', '🥈', '🥉'][i] || i + 1}</td><td>${esc(p.username)}</td><td>${p.wins}</td><td>${p.losses}</td><td>${p.total_score}</td><td>${p.win_rate}%</td></tr>`).join('');
   const h = await sb.from('match_logs').select('*').contains('players', [me.id]).order('played_at', { ascending: false }).limit(10);
   $('hist').innerHTML = (h.data || []).map(m => `<li>${new Date(m.played_at).toLocaleDateString()} · ${esc(m.mode)} · ${m.team1_score} - ${m.team2_score}</li>`).join('');
 };
@@ -79,8 +80,8 @@ function legal(g, s) {
 }
 function place(g, s, i, side) {
   const x = g.p[s].hand.splice(i, 1)[0];
-  if (!g.board.length) { g.board.push(x); g.L = x[0]; g.R = x[1]; }
-  else if (side === 'L') { const o = x[1] === g.L ? x : [x[1], x[0]]; g.board.unshift(o); g.L = o[0]; }
+  if (!g.board.length) { g.board.push(x); g.L = x[0]; g.R = x[1]; g.cI = 0; }
+  else if (side === 'L') { const o = x[1] === g.L ? x : [x[1], x[0]]; g.board.unshift(o); g.L = o[0]; g.cI++; }
   else { const o = x[0] === g.R ? x : [x[1], x[0]]; g.board.push(o); g.R = o[1]; }
   g.passes = 0;
 }
@@ -179,26 +180,87 @@ async function saveIfOver() {
 /* ---------- rendering ---------- */
 const P = [[], [4], [0, 8], [0, 4, 8], [0, 2, 6, 8], [0, 2, 4, 6, 8], [0, 2, 3, 5, 6, 8]];
 const half = n => `<div class="h">${[...Array(9).keys()].map(i => `<i class="${P[n].includes(i) ? 'on' : ''}"></i>`).join('')}</div>`;
-const tile = (a, b, x = '', c = '') => `<div class="tile ${a === b ? 'v' : ''} ${c}" ${x}>${half(a)}${half(b)}</div>`;
+const tile = (a, b, x = '', c = '') => `<div class="tile ${c}" ${x}>${half(a)}${half(b)}</div>`;
 const canTaunt = () => G && !G.over && (G.turn === seat || G.mv <= graceMv);
+const hue = s => [...s].reduce((a, c) => a + c.charCodeAt(0), 0) * 47 % 360;
+const key = x => x[0] < x[1] ? x[0] + '-' + x[1] : x[1] + '-' + x[0];
+const bEls = {};
+let fxS = { mid: '', n: 0, bone: 99, round: 0, ps: 0, turn: -1, ro: false, over: false };
 
+/* snake layout: units where tile = 2x1; right branch snakes down, left branch snakes up */
+function layout(g) {
+  const B = g.board, c = g.cI || 0, M = 9, out = [], o = B[c], d0 = o[0] === o[1];
+  out.push({ x: d0 ? -.5 : -1, y: d0 ? -1 : -.5, w: d0 ? 1 : 2, h: d0 ? 2 : 1, t: o, k: key(o) });
+  const walk = (tiles, nat) => {
+    let hd = nat, ex = (d0 ? .5 : 1) * nat, cy = 0;
+    for (const x of tiles) {
+      const dbl = x[0] === x[1], k = key(x);
+      if (dbl && Math.abs(ex + hd) <= M) { out.push({ x: hd > 0 ? ex : ex - 1, y: cy - 1, w: 1, h: 2, t: x, k }); ex += hd; }
+      else if (!dbl && Math.abs(ex + 2 * hd) <= M) { out.push({ x: hd > 0 ? ex : ex - 2, y: cy - .5, w: 2, h: 1, t: hd === nat ? x : [x[1], x[0]], k }); ex += 2 * hd; }
+      else { out.push({ x: hd > 0 ? ex : ex - 1, y: nat > 0 ? cy - .5 : cy - 1.5, w: 1, h: 2, t: x, k }); ex += hd; hd = -hd; cy += 2 * nat; } // corner
+    }
+  };
+  walk(B.slice(c + 1), 1); walk(B.slice(0, c).reverse(), -1);
+  return out;
+}
+function drawBoard(g) {
+  const box = $('board');
+  if (!g.board.length) { box.innerHTML = ''; for (const k in bEls) delete bEls[k]; return; }
+  const L = layout(g), W = box.clientWidth, H = box.clientHeight;
+  const x0 = Math.min(...L.map(p => p.x)), x1 = Math.max(...L.map(p => p.x + p.w)), y0 = Math.min(...L.map(p => p.y)), y1 = Math.max(...L.map(p => p.y + p.h));
+  const S = Math.min(W / (x1 - x0), H / (y1 - y0), 46), ox = (W - (x1 - x0) * S) / 2, oy = (H - (y1 - y0) * S) / 2, seen = new Set();
+  L.forEach(p => {
+    seen.add(p.k); let el = bEls[p.k];
+    const sig = p.t.join('') + (p.h > p.w ? 'v' : 'h');
+    if (!el) { el = bEls[p.k] = document.createElement('div'); el.className = 'tile drop'; box.appendChild(el); }
+    if (el.dataset.s !== sig) { el.dataset.s = sig; el.classList.toggle('v', p.h > p.w); el.innerHTML = half(p.t[0]) + half(p.t[1]); }
+    Object.assign(el.style, { left: ox + (p.x - x0) * S + 'px', top: oy + (p.y - y0) * S + 'px', width: p.w * S - 2 + 'px', height: p.h * S - 2 + 'px' });
+  });
+  for (const k in bEls) if (!seen.has(k)) { bEls[k].remove(); delete bEls[k]; }
+}
+function confetti() {
+  const cols = ['#ffc247', '#4ade9b', '#ff6b6b', '#6ea8ff', '#fff'];
+  for (let i = 0; i < 46; i++) {
+    const e = document.createElement('i'); e.className = 'cf';
+    e.style.cssText = `left:${Math.random() * 100}vw;background:${cols[i % 5]};animation-delay:${Math.random() * .6}s;animation-duration:${1.8 + Math.random()}s`;
+    document.body.appendChild(e); setTimeout(() => e.remove(), 3500);
+  }
+}
+function fx(g) { // sounds + effects from state changes
+  const f = fxS, mineTeam = g.p[seat].team;
+  if (f.mid !== g.mid) Object.assign(f, { mid: g.mid, n: 0, bone: g.bone.length, round: g.round, ps: 0, turn: -1, ro: false, over: false });
+  if (g.round !== f.round) Object.assign(f, { n: 0, bone: g.bone.length, round: g.round, ps: 0, ro: false });
+  if (g.board.length > f.n) sfx.place(); else if (g.bone.length < f.bone) sfx.draw();
+  if (g.passes > f.ps) sfx.pass();
+  if (g.turn === seat && f.turn !== seat && !g.roundOver && !g.over) sfx.turn();
+  if (g.over && !f.over) { const w = g.sc[mineTeam] > g.sc[1 - mineTeam]; w ? (sfx.fan(), confetti()) : sfx.lose(); }
+  else if (g.roundOver && !f.ro) { if (g.roundOver.w === mineTeam) { sfx.win(); confetti(); } else if (g.roundOver.w >= 0) sfx.lose(); }
+  Object.assign(f, { n: g.board.length, bone: g.bone.length, ps: g.passes, turn: g.turn, ro: !!g.roundOver, over: g.over });
+}
 function render() {
   if (!G || cur !== 'game') return;
   const g = G, mine = g.p[seat], lg = legal(g, seat), ok = new Set(lg.map(x => x[0]));
   const my = g.turn === seat && !g.roundOver && !g.over;
-  $('sc').textContent = `${t('team1')} ${g.sc[0]} - ${g.sc[1]} ${t('team2')} (${g.target})`;
-  $('opps').innerHTML = g.p.map((p, i) => i === seat ? '' : `<div class="opp ${g.turn === i ? 'turn' : ''}">${esc(p.name)} ×${p.hand.length}</div>`).join('')
-    + (g.bone.length ? `<div class="opp">🂠 ${g.bone.length}</div>` : '');
-  $('board').innerHTML = g.board.map(([a, b]) => tile(a, b)).join('');
-  $('hand').innerHTML = mine.hand.map(([a, b], i) => tile(a, b, `data-i="${i}"`, my && ok.has(i) ? 'ok' : '')).join('');
+  fx(g);
+  $('sc').innerHTML = [0, 1].map(k => `<span class="tm ${k === mine.team ? 'me' : ''}">${t(k ? 'team2' : 'team1')}<b>${g.sc[k]}</b></span>`).join('') + `<span class="tg2">/${g.target}</span>`;
+  const pos = ['bottom', 'right', 'top', 'left']; // counter-clockwise from me
+  $('opps').innerHTML = g.p.map((p, i) => {
+    if (i === seat) return '';
+    const ps = g.n === 2 ? 'top' : pos[(i - seat + g.n) % g.n];
+    return `<div class="seat ${ps} ${g.turn === i && !g.roundOver ? 'turn' : ''}"><span class="av" style="background:hsl(${hue(p.name)} 65% 50%)">${esc([...p.name][0])}</span><span class="nm">${esc(p.name)}</span><span class="bks">${'<i></i>'.repeat(Math.min(p.hand.length, 7))}</span><b>${p.hand.length}</b></div>`;
+  }).join('') + (g.bone.length ? `<div class="bone">🂠 ${g.bone.length}</div>` : '');
+  drawBoard(g);
+  $('hand').innerHTML = mine.hand.map(([a, b], i) => tile(a, b, `data-i="${i}"`, 'v' + (my && ok.has(i) ? ' ok' : ''))).join('');
   $('msg').textContent = g.over ? (g.sc[mine.team] > g.sc[1 - mine.team] ? t('matchWin') : t('matchLose'))
     : g.roundOver ? (g.roundOver.w < 0 ? t('tie') : (g.roundOver.w === mine.team ? t('youWin') : t('youLose'))) + (g.roundOver.pts ? ' +' + g.roundOver.pts : '')
     : my ? t('yourTurn') : t('wait') + ' ' + g.p[g.turn].name;
+  $('msg').className = 'msg' + (my ? ' go' : '');
   $('drawBtn').classList.toggle('hidden', !(my && !lg.length && g.n === 2 && g.bone.length));
   $('backG').classList.toggle('hidden', !g.over);
   if (!my) $('choose').classList.add('hidden');
   document.querySelectorAll('.tb').forEach(b => b.disabled = !canTaunt());
 }
+addEventListener('resize', () => render());
 $('hand').onclick = e => {
   const el = e.target.closest('[data-i]'); if (!el || !G) return;
   const i = +el.dataset.i;
@@ -217,7 +279,7 @@ $('taunts').innerHTML = TAUNTS.map(x => `<button class="btn alt tb" disabled>${x
 $('taunts').onclick = e => {
   const b = e.target.closest('.tb'); if (!b || !canTaunt()) return;
   const m = `${profile ? profile.username : ''}: ${b.textContent}`;
-  toast(m); if (ch) ch.send({ type: 'broadcast', event: 'taunt', payload: m });
+  toast(m); sfx.taunt(); if (ch) ch.send({ type: 'broadcast', event: 'taunt', payload: m });
 };
 
 /* ---------- vs bot ---------- */
@@ -252,15 +314,15 @@ function joinRoom(c, h) {
     .on('broadcast', { event: 'intent' }, ({ payload: p }) => {
       if (host && G && G.p[p.seat] && G.p[p.seat].uid === p.uid && act(G, p.seat, p.a)) push();
     })
-    .on('broadcast', { event: 'taunt' }, ({ payload }) => toast(payload))
+    .on('broadcast', { event: 'taunt' }, ({ payload }) => { sfx.taunt(); toast(payload); })
     .subscribe(async st => { if (st === 'SUBSCRIBED') await ch.track({ uid: me.id, name: profile.username, at: Date.now() }); });
   history.pushState({ g: 1 }, '');
   $('roomcode').textContent = c; $('hostbox').classList.toggle('hidden', !h);
   show('lobby');
 }
 function renderLobby() {
-  $('lobbylist').innerHTML = lobby.map(p => `<div class="flex justify-between bg-slate-800 rounded p-2"><span>${esc(p.name)}</span>
-    <button class="btn alt tg" data-u="${p.uid}" ${host ? '' : 'disabled'}>${t(assign[p.uid] === 1 ? 'team2' : 'team1')}</button></div>`).join('');
+  $('lobbylist').innerHTML = lobby.map(p => `<div class="lrow"><span>${esc(p.name)}</span>
+    <button class="tg t${assign[p.uid] === 1 ? 2 : 1}" data-u="${p.uid}" ${host ? '' : 'disabled'}>${t(assign[p.uid] === 1 ? 'team2' : 'team1')}</button></div>`).join('');
 }
 $('lobbylist').onclick = e => {
   const b = e.target.closest('.tg'); if (!b || !host) return;
@@ -280,3 +342,10 @@ $('startRoom').onclick = () => {
 $('lang').value = lang();
 $('lang').onchange = e => { setLang(e.target.value); if (profile) loadProfile(); render(); if (cur === 'lobby') renderLobby(); };
 setLang(lang());
+$('hero').innerHTML = tile(6, 6, '', 'v') + tile(5, 3, '', 'v');
+document.querySelectorAll('.snd').forEach(b => {
+  b.textContent = isOn() ? '🔊' : '🔇';
+  b.onclick = () => { const v = toggle(); document.querySelectorAll('.snd').forEach(x => x.textContent = v ? '🔊' : '🔇'); };
+});
+$('exitG').onclick = () => history.back();
+document.addEventListener('click', e => { if (e.target.closest('.btn,.tb,.tg')) sfx.click(); });

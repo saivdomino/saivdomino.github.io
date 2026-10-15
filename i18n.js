@@ -1,152 +1,33 @@
-export const translations = {
-  ar: {
-    title: "سايف دومينو",
-    tagline: "لعبة الدومينو الجزائرية الأصيلة أونلاين",
-    login: "تسجيل الدخول",
-    register: "حساب جديد",
-    logout: "خروج",
-    playVsAI: "اللعب ضد البوت (منفرد)",
-    playOnline: "غرفة أونلاين خاصة",
-    leaderboard: "لوحة المتصدرين",
-    profile: "الملف الشخصي",
-    username: "اسم المستخدم",
-    password: "كلمة المرور",
-    startMatch: "بدء البارتية",
-    roomCode: "كود الغرفة",
-    joinRoom: "انضمام للغرفة",
-    createRoom: "إنشاء غرفة جديدة",
-    copyCode: "نسخ الكود",
-    waitingHost: "في انتظار المضيف لترتيب المجموعات...",
-    group1: "المجموعة 1 (أنت وزمليك)",
-    group2: "المجموعة 2 (الخصوم)",
-    easy: "سهل",
-    medium: "متوسط",
-    hard: "صعب (ذكي)",
-    boneyard: "المخزن (البونيا)",
-    yourTurn: "دورك الآن في اللعب!",
-    opponentTurn: "دور الخصم...",
-    blockedGame: "مبلعة! (لا توجد حركات متاحة)",
-    taunts: {
-      mlih: "مليح",
-      ketel: "كتل",
-      bala: "بلع",
-      nzidek: "نزيدك خطرة",
-      laebak: "لعبك",
-      rassi: "راسي"
-    },
-    stats: {
-      wins: "انتصارات",
-      losses: "هزائم",
-      totalScore: "النقاط الكلية",
-      winRate: "نسبة الفوز"
-    }
-  },
-  fr: {
-    title: "SaivDOMINO",
-    tagline: "Le jeu de دومينو algérien authentique en ligne",
-    login: "Connexion",
-    register: "Inscription",
-    logout: "Déconnexion",
-    playVsAI: "Jouer vs IA",
-    playOnline: "Salon Privé En Ligne",
-    leaderboard: "Classement",
-    profile: "Profil",
-    username: "Nom d'utilisateur",
-    password: "Mot de passe",
-    startMatch: "Commencer le match",
-    roomCode: "Code du salon",
-    joinRoom: "Rejoindre",
-    createRoom: "Créer un salon",
-    copyCode: "Copier le code",
-    waitingHost: "En attente du Hôte pour placer les groupes...",
-    group1: "Groupe 1 (Vous & Allié)",
-    group2: "Groupe 2 (Adversaires)",
-    easy: "Facile",
-    medium: "Moyen",
-    hard: "Difficile",
-    boneyard: "Pioche",
-    yourTurn: "C'est votre tour !",
-    opponentTurn: "Tour de l'adversaire...",
-    blockedGame: "Bloqué ! (Match bloqué)",
-    taunts: {
-      mlih: "Mlih",
-      ketel: "Ketel",
-      bala: "Bala",
-      nzidek: "Nzidek",
-      laebak: "Laebak",
-      rassi: "Rassi"
-    },
-    stats: {
-      wins: "Victoires",
-      losses: "Défaites",
-      totalScore: "Score Total",
-      winRate: "% Victoire"
-    }
-  },
-  en: {
-    title: "SaivDOMINO",
-    tagline: "Authentic Algerian Dominoes Game Online",
-    login: "Login",
-    register: "Register",
-    logout: "Logout",
-    playVsAI: "Play vs AI (Offline)",
-    playOnline: "Online Private Rooms",
-    leaderboard: "Leaderboard",
-    profile: "Profile",
-    username: "Username",
-    password: "Password",
-    startMatch: "Start Match",
-    roomCode: "Room Code",
-    joinRoom: "Join Room",
-    createRoom: "Create Room",
-    copyCode: "Copy Code",
-    waitingHost: "Waiting for Host to set up groups...",
-    group1: "Group 1 (You & Partner)",
-    group2: "Group 2 (Opponents)",
-    easy: "Easy",
-    medium: "Medium",
-    hard: "Hard (Smart)",
-    boneyard: "Boneyard",
-    yourTurn: "Your Turn!",
-    opponentTurn: "Opponent's turn...",
-    blockedGame: "Blocked Game!",
-    taunts: {
-      mlih: "Mlih",
-      ketel: "Ketel",
-      bala: "Bala",
-      nzidek: "Nzidek",
-      laebak: "Laebak",
-      rassi: "Rassi"
-    },
-    stats: {
-      wins: "Wins",
-      losses: "Losses",
-      totalScore: "Total Score",
-      winRate: "Win Rate"
-    }
-  }
+const D = {
+  ar: { email:'البريد الإلكتروني', pass:'كلمة السر', uname:'اسم اللاعب', login:'دخول', signup:'تسجيل', logout:'خروج',
+    checkMail:'تحقق من بريدك لتأكيد الحساب', vsBot:'ضد البوت', create:'إنشاء غرفة', join:'دخول غرفة', code:'كود الغرفة',
+    lb:'المتصدرون', back:'رجوع', wins:'فوز', losses:'خسارة', score:'نقاط', mode:'النمط', level:'المستوى',
+    easy:'سهل', medium:'متوسط', hard:'صعب', target:'السكور', start:'ابدأ', team1:'المجموعة 1', team2:'المجموعة 2',
+    players:'اللاعبون', yourTurn:'دورك!', wait:'دور', draw:'اسحب', youWin:'ربحتي الجولة', youLose:'خسرتي الجولة',
+    tie:'تعادل', needTeams:'لازم عدد متساوي في المجموعتين (1v1 أو 2v2)', leave:'تخرج من اللعبة؟',
+    matchWin:'🏆 ربحتي البارتية!', matchLose:'خسرتي البارتية', history:'آخر ماتشاتي', rank:'الترتيب', rate:'نسبة الفوز' },
+  en: { email:'Email', pass:'Password', uname:'Player name', login:'Log in', signup:'Sign up', logout:'Log out',
+    checkMail:'Check your email to confirm your account', vsBot:'Play vs bot', create:'Create room', join:'Join room', code:'Room code',
+    lb:'Leaderboard', back:'Back', wins:'Wins', losses:'Losses', score:'Score', mode:'Mode', level:'Level',
+    easy:'Easy', medium:'Medium', hard:'Hard', target:'Target', start:'Start', team1:'Group 1', team2:'Group 2',
+    players:'Players', yourTurn:'Your turn!', wait:'Turn:', draw:'Draw', youWin:'You won the round', youLose:'You lost the round',
+    tie:'Tie', needTeams:'Both groups need the same number of players (1v1 or 2v2)', leave:'Leave the game?',
+    matchWin:'🏆 You won the match!', matchLose:'You lost the match', history:'My recent matches', rank:'Rank', rate:'Win rate' },
+  fr: { email:'E-mail', pass:'Mot de passe', uname:'Nom du joueur', login:'Connexion', signup:'Inscription', logout:'Déconnexion',
+    checkMail:'Vérifiez votre e-mail pour confirmer le compte', vsBot:'Jouer contre le bot', create:'Créer une salle', join:'Rejoindre', code:'Code de la salle',
+    lb:'Classement', back:'Retour', wins:'Victoires', losses:'Défaites', score:'Points', mode:'Mode', level:'Niveau',
+    easy:'Facile', medium:'Moyen', hard:'Difficile', target:'Score cible', start:'Démarrer', team1:'Groupe 1', team2:'Groupe 2',
+    players:'Joueurs', yourTurn:'À vous !', wait:'Tour :', draw:'Piocher', youWin:'Manche gagnée', youLose:'Manche perdue',
+    tie:'Égalité', needTeams:'Les deux groupes doivent avoir le même nombre de joueurs (1v1 ou 2v2)', leave:'Quitter la partie ?',
+    matchWin:'🏆 Partie gagnée !', matchLose:'Partie perdue', history:'Mes derniers matchs', rank:'Rang', rate:'Taux de victoire' }
 };
-
-export function setLanguage(lang) {
-  localStorage.setItem('saiv_lang', lang);
-  document.documentElement.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
-  document.documentElement.setAttribute('lang', lang);
-  updateUIStrings(lang);
-}
-
-export function t(key) {
-  const lang = localStorage.getItem('saiv_lang') || 'ar';
-  const keys = key.split('.');
-  let val = translations[lang];
-  for (const k of keys) {
-    val = val ? val[k] : null;
-  }
-  return val || key;
-}
-
-function updateUIStrings(lang) {
-  document.querySelectorAll('[data-i18n]').forEach(el => {
-    const key = el.getAttribute('data-i18n');
-    el.textContent = t(key);
-  });
+let L = localStorage.getItem('lang') || 'ar';
+export const lang = () => L;
+export const t = k => (D[L] && D[L][k]) || k;
+export function setLang(l) {
+  L = l; localStorage.setItem('lang', l);
+  document.documentElement.lang = l;
+  document.documentElement.dir = l === 'ar' ? 'rtl' : 'ltr';
+  document.querySelectorAll('[data-i18n]').forEach(e => e.textContent = t(e.dataset.i18n));
+  document.querySelectorAll('[data-ph]').forEach(e => e.placeholder = t(e.dataset.ph));
 }

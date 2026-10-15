@@ -188,8 +188,8 @@ const bEls = {};
 let fxS = { mid: '', n: 0, bone: 99, round: 0, ps: 0, turn: -1, ro: false, over: false };
 
 /* snake layout: units where tile = 2x1; right branch snakes down, left branch snakes up */
-function layout(g) {
-  const B = g.board, c = g.cI || 0, M = 9, out = [], o = B[c], d0 = o[0] === o[1];
+function layout(g, M) {
+  const B = g.board, c = g.cI || 0, out = [], o = B[c], d0 = o[0] === o[1];
   out.push({ x: d0 ? -.5 : -1, y: d0 ? -1 : -.5, w: d0 ? 1 : 2, h: d0 ? 2 : 1, t: o, k: key(o) });
   const walk = (tiles, nat) => {
     let hd = nat, ex = (d0 ? .5 : 1) * nat, cy = 0;
@@ -203,17 +203,26 @@ function layout(g) {
   walk(B.slice(c + 1), 1); walk(B.slice(0, c).reverse(), -1);
   return out;
 }
+function fit(g, W, H) { // tiles stay big: rows wrap by width; shrink only if height runs out (never below 24px)
+  let best;
+  for (let S = Math.min(48, Math.max(28, W / 11)); S >= 24; S -= 2) {
+    const M = Math.max(3, Math.floor(W / S / 2) - 1), L = layout(g, M);
+    best = { S, L, x0: Math.min(...L.map(p => p.x)), x1: Math.max(...L.map(p => p.x + p.w)), y0: Math.min(...L.map(p => p.y)), y1: Math.max(...L.map(p => p.y + p.h)) };
+    if ((best.y1 - best.y0) * S <= H && (best.x1 - best.x0) * S <= W) break;
+  }
+  return best;
+}
 function drawBoard(g) {
   const box = $('board');
   if (!g.board.length) { box.innerHTML = ''; for (const k in bEls) delete bEls[k]; return; }
-  const L = layout(g), W = box.clientWidth, H = box.clientHeight;
-  const x0 = Math.min(...L.map(p => p.x)), x1 = Math.max(...L.map(p => p.x + p.w)), y0 = Math.min(...L.map(p => p.y)), y1 = Math.max(...L.map(p => p.y + p.h));
-  const S = Math.min(W / (x1 - x0), H / (y1 - y0), 46), ox = (W - (x1 - x0) * S) / 2, oy = (H - (y1 - y0) * S) / 2, seen = new Set();
+  const W = box.clientWidth, H = box.clientHeight, { S, L, x0, x1, y0, y1 } = fit(g, W, H);
+  const ox = (W - (x1 - x0) * S) / 2, oy = (H - (y1 - y0) * S) / 2, seen = new Set(), ends = [key(g.board[0]), key(g.board[g.board.length - 1])];
   L.forEach(p => {
     seen.add(p.k); let el = bEls[p.k];
     const sig = p.t.join('') + (p.h > p.w ? 'v' : 'h');
     if (!el) { el = bEls[p.k] = document.createElement('div'); el.className = 'tile drop'; box.appendChild(el); }
     if (el.dataset.s !== sig) { el.dataset.s = sig; el.classList.toggle('v', p.h > p.w); el.innerHTML = half(p.t[0]) + half(p.t[1]); }
+    el.classList.toggle('end', ends.includes(p.k)); // open ends glow
     Object.assign(el.style, { left: ox + (p.x - x0) * S + 'px', top: oy + (p.y - y0) * S + 'px', width: p.w * S - 2 + 'px', height: p.h * S - 2 + 'px' });
   });
   for (const k in bEls) if (!seen.has(k)) { bEls[k].remove(); delete bEls[k]; }
@@ -243,12 +252,13 @@ function render() {
   const my = g.turn === seat && !g.roundOver && !g.over;
   fx(g);
   $('sc').innerHTML = [0, 1].map(k => `<span class="tm ${k === mine.team ? 'me' : ''}">${t(k ? 'team2' : 'team1')}<b>${g.sc[k]}</b></span>`).join('') + `<span class="tg2">/${g.target}</span>`;
-  const pos = ['bottom', 'right', 'top', 'left']; // counter-clockwise from me
-  $('opps').innerHTML = g.p.map((p, i) => {
-    if (i === seat) return '';
-    const ps = g.n === 2 ? 'top' : pos[(i - seat + g.n) % g.n];
-    return `<div class="seat ${ps} ${g.turn === i && !g.roundOver ? 'turn' : ''}"><span class="av" style="background:hsl(${hue(p.name)} 65% 50%)">${esc([...p.name][0])}</span><span class="nm">${esc(p.name)}</span><span class="bks">${'<i></i>'.repeat(Math.min(p.hand.length, 7))}</span><b>${p.hand.length}</b></div>`;
-  }).join('') + (g.bone.length ? `<div class="bone">🂠 ${g.bone.length}</div>` : '');
+  const order = []; for (let k = g.n - 1; k >= 1; k--) order.push((seat + k) % g.n); // all others on top: left → right
+  $('opps').className = g.n > 2 ? 'many' : '';
+  $('opps').innerHTML = order.map(i => {
+    const p = g.p[i];
+    return `<div class="seat ${p.team === mine.team ? 'ally' : ''} ${g.turn === i && !g.roundOver ? 'turn' : ''}"><span class="av" style="background:hsl(${hue(p.name)} 65% 50%)">${esc([...p.name][0])}</span><span class="nm">${esc(p.name)}</span><span class="bks">${'<i></i>'.repeat(Math.min(p.hand.length, 7))}</span><b>${p.hand.length}</b></div>`;
+  }).join('');
+  $('bone').textContent = '🂠 ' + g.bone.length; $('bone').classList.toggle('hidden', !g.bone.length);
   drawBoard(g);
   $('hand').innerHTML = mine.hand.map(([a, b], i) => tile(a, b, `data-i="${i}"`, 'v' + (my && ok.has(i) ? ' ok' : ''))).join('');
   $('msg').textContent = g.over ? (g.sc[mine.team] > g.sc[1 - mine.team] ? t('matchWin') : t('matchLose'))

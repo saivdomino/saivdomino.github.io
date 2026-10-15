@@ -11,10 +11,24 @@ const TAUNTS = ['مليح', 'كتل', 'بلع', 'نزيدك خطرة', 'لعبك
 let me = null, profile = null, G = null, seat = 0, ch = null, host = false, code = '';
 let cur = 'auth', T, tt, quiet = false, savedMid = null, graceMv = -1, lobby = [], assign = {}, pend = null;
 
+/* ---------- session persistence: come back to the same game after leaving the browser ---------- */
+const SK = 'dom_session';
+const saveSess = () => { try { if (me && (G || ch)) localStorage.setItem(SK, JSON.stringify({ uid: me.id, code: ch ? code : null, host, seat, G, ts: Date.now() })); } catch {} };
+const clearSess = () => { try { localStorage.removeItem(SK); } catch {} };
+function resume() {
+  let r = null; try { r = JSON.parse(localStorage.getItem(SK)); } catch {}
+  if (!r || r.uid !== me.id || Date.now() - r.ts > 6 * 3600e3) { clearSess(); return false; }
+  if (r.G) fxS = { mid: r.G.mid, n: r.G.board.length, bone: r.G.bone.length, round: r.G.round, ps: r.G.passes, turn: r.G.turn, ro: !!r.G.roundOver, over: r.G.over }; // no replayed sounds
+  if (r.code) { joinRoom(r.code, r.host, r.G, r.seat); return true; }
+  if (!r.G) return false;
+  G = r.G; seat = r.seat; ch = null; host = false;
+  history.pushState({ g: 1 }, ''); show('game'); tick(); return true;
+}
+
 /* ---------- views / history ---------- */
 const show = v => { cur = v; document.body.dataset.v = v; document.querySelectorAll('.v').forEach(e => e.classList.toggle('hidden', e.id !== 'v-' + v)); };
 const toast = m => { const e = $('toast'); e.textContent = m; e.classList.remove('hidden'); clearTimeout(tt); tt = setTimeout(() => e.classList.add('hidden'), 2500); };
-function leave() { clearTimeout(T); if (ch) { sb.removeChannel(ch); ch = null; } G = null; host = false; show('menu'); }
+function leave() { clearSess(); clearTimeout(T); if (ch) { sb.removeChannel(ch); ch = null; } G = null; host = false; show('menu'); }
 window.onpopstate = () => {
   if (quiet) { quiet = false; return; }
   if (cur === 'game' || cur === 'lobby') { if (confirm(t('leave'))) leave(); else history.pushState({ g: 1 }, ''); }
@@ -32,9 +46,12 @@ $('login').onclick = async () => {
   if (error) $('autherr').textContent = error.message;
 };
 $('logout').onclick = () => sb.auth.signOut();
-sb.auth.onAuthStateChange((_, s) => setTimeout(async () => {
-  me = s ? s.user : null;
-  if (me) { await loadProfile(); show('menu'); } else show('auth');
+sb.auth.onAuthStateChange((ev, sess) => setTimeout(async () => {
+  const u = sess ? sess.user : null;
+  if (u && me && u.id === me.id) { me = u; return; } // token refresh / tab focus: leave the screen alone
+  me = u;
+  if (me) { await loadProfile(); if (!resume()) show('menu'); }
+  else { if (ev === 'SIGNED_OUT') clearSess(); if (ch) { sb.removeChannel(ch); ch = null; } clearTimeout(T); G = null; show('auth'); }
 }, 0));
 async function loadProfile() {
   const { data } = await sb.from('profiles').select('*').eq('id', me.id).single();
@@ -145,7 +162,7 @@ function botPick(g) {
 const authority = () => !ch || host;
 function push() {
   if (ch && host) ch.send({ type: 'broadcast', event: 'state', payload: G });
-  tick(); saveIfOver();
+  saveSess(); tick(); saveIfOver();
 }
 function tick() {
   render();
@@ -298,14 +315,14 @@ $('startBot').onclick = () => {
   const bots = n === 2 ? [bot('🤖')] : [bot('🤖 1'), bot('🤝 🤖'), bot('🤖 2')]; // seats: me, opp, partner, opp
   seat = 0; ch = null; host = false;
   G = newGame([{ uid: me.id, name: profile.username }, ...bots], +$('bt').value, 'bot');
-  history.pushState({ g: 1 }, ''); show('game'); tick();
+  history.pushState({ g: 1 }, ''); show('game'); saveSess(); tick();
 };
 
 /* ---------- online private rooms (Realtime Broadcast + Presence) ---------- */
 $('createRoom').onclick = () => joinRoom(Math.random().toString(36).slice(2, 7).toUpperCase(), true);
 $('joinRoom').onclick = () => { const c = $('rcode').value.trim().toUpperCase(); if (c) joinRoom(c, false); };
-function joinRoom(c, h) {
-  code = c; host = h; assign = {}; lobby = [];
+function joinRoom(c, h, g0 = null, s0 = 0) {
+  code = c; host = h; assign = {}; lobby = []; G = g0; seat = s0;
   ch = sb.channel('dom:' + c, { config: { broadcast: { self: false }, presence: { key: me.id } } });
   ch.on('presence', { event: 'sync' }, () => {
     lobby = Object.values(ch.presenceState()).map(a => a[0]).sort((a, b) => a.at - b.at);
@@ -319,16 +336,23 @@ function joinRoom(c, h) {
     .on('broadcast', { event: 'state' }, ({ payload }) => {
       G = payload; seat = G.p.findIndex(p => p.uid === me.id); if (seat < 0) return;
       if (cur !== 'game') show('game');
-      render(); saveIfOver();
+      render(); saveIfOver(); saveSess();
     })
     .on('broadcast', { event: 'intent' }, ({ payload: p }) => {
       if (host && G && G.p[p.seat] && G.p[p.seat].uid === p.uid && act(G, p.seat, p.a)) push();
     })
+    .on('broadcast', { event: 'hello' }, () => { if (host && G) ch.send({ type: 'broadcast', event: 'state', payload: G }); })
     .on('broadcast', { event: 'taunt' }, ({ payload }) => { sfx.taunt(); toast(payload); })
-    .subscribe(async st => { if (st === 'SUBSCRIBED') await ch.track({ uid: me.id, name: profile.username, at: Date.now() }); });
-  history.pushState({ g: 1 }, '');
+    .subscribe(async st => {
+      if (st !== 'SUBSCRIBED') return; // also fires again after every automatic reconnect
+      await ch.track({ uid: me.id, name: profile.username, at: Date.now() });
+      if (host && G) { ch.send({ type: 'broadcast', event: 'state', payload: G }); tick(); }
+      else if (!host) ch.send({ type: 'broadcast', event: 'hello', payload: me.id });
+    });
+  if (cur !== 'game' && cur !== 'lobby') history.pushState({ g: 1 }, '');
   $('roomcode').textContent = c; $('hostbox').classList.toggle('hidden', !h);
-  show('lobby');
+  if (g0) { show('game'); render(); } else show('lobby');
+  saveSess();
 }
 function renderLobby() {
   $('lobbylist').innerHTML = lobby.map(p => `<div class="lrow"><span>${esc(p.name)}</span>
@@ -358,4 +382,9 @@ document.querySelectorAll('.snd').forEach(b => {
   b.onclick = () => { const v = toggle(); document.querySelectorAll('.snd').forEach(x => x.textContent = v ? '🔊' : '🔇'); };
 });
 $('exitG').onclick = () => history.back();
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible' || !me) return;
+  if (ch && ch.state !== 'joined' && ch.state !== 'joining') { const c = code, h = host, g = G, sd = seat; await sb.removeChannel(ch); ch = null; joinRoom(c, h, g, sd); return; }
+  if (G) { tick(); if (ch && !host) ch.send({ type: 'broadcast', event: 'hello', payload: me.id }); }
+});
 document.addEventListener('click', e => { if (e.target.closest('.btn,.tb,.tg')) sfx.click(); });

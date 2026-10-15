@@ -1,143 +1,77 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SaivDOMINO - لعبة الدومينو الجزائرية</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SaivDOMINO</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<link rel="stylesheet" href="style.css">
 </head>
-<body class="min-h-screen text-slate-100 flex flex-col justify-between">
+<body class="bg-slate-900 text-white min-h-screen">
+<header class="flex justify-between items-center p-3 bg-slate-800">
+  <b class="text-xl">SaivDOMINO</b>
+  <select id="lang" class="!w-auto"><option value="ar">AR</option><option value="en">EN</option><option value="fr">FR</option></select>
+</header>
+<main class="max-w-3xl mx-auto p-3">
 
-  <!-- شريط التنقل العلوي -->
-  <header class="bg-emerald-950/80 backdrop-blur border-b border-emerald-800 p-4 flex justify-between items-center shadow-lg">
-    <div class="flex items-center gap-3">
-      <h1 class="text-2xl font-black text-amber-400 tracking-wider">🎲 SaivDOMINO</h1>
-      <span class="text-xs bg-amber-500/20 text-amber-300 px-2 py-1 rounded border border-amber-500/30">النسخة الجزائرية</span>
+<section id="v-auth" class="v space-y-2">
+  <input id="email" type="email" data-ph="email">
+  <input id="pass" type="password" data-ph="pass">
+  <input id="uname" data-ph="uname">
+  <div class="flex gap-2"><button id="login" class="btn" data-i18n="login"></button><button id="signup" class="btn alt" data-i18n="signup"></button></div>
+  <p id="autherr" class="text-yellow-300"></p>
+</section>
+
+<section id="v-menu" class="v hidden space-y-3">
+  <div id="stats" class="bg-slate-800 rounded p-3"></div>
+  <div class="bg-slate-800 rounded p-3 space-y-2">
+    <b data-i18n="vsBot"></b>
+    <div class="grid grid-cols-3 gap-2">
+      <select id="bn"><option value="2">1v1</option><option value="4">2v2</option></select>
+      <select id="bl"><option value="easy" data-i18n="easy"></option><option value="medium" data-i18n="medium"></option><option value="hard" data-i18n="hard"></option></select>
+      <select id="bt"><option>100</option><option>150</option></select>
     </div>
-    
-    <div class="flex items-center gap-4">
-      <!-- تبديل اللغة -->
-      <select id="langSwitch" class="bg-emerald-900 border border-emerald-700 text-sm rounded px-2 py-1 outline-none">
-        <option value="ar">العربية</option>
-        <option value="fr">Français</option>
-        <option value="en">English</option>
-      </select>
+    <button id="startBot" class="btn" data-i18n="start"></button>
+  </div>
+  <div class="bg-slate-800 rounded p-3 space-y-2">
+    <button id="createRoom" class="btn" data-i18n="create"></button>
+    <div class="flex gap-2"><input id="rcode" data-ph="code" maxlength="5"><button id="joinRoom" class="btn" data-i18n="join"></button></div>
+  </div>
+  <div class="flex gap-2"><button id="toLb" class="btn alt" data-i18n="lb"></button><button id="logout" class="btn alt" data-i18n="logout"></button></div>
+</section>
 
-      <div id="authNavArea">
-        <button id="openAuthModalBtn" class="bg-amber-500 hover:bg-amber-600 text-emerald-950 font-bold px-4 py-1.5 rounded transition shadow" data-i18n="login">تسجيل الدخول</button>
-      </div>
-    </div>
-  </header>
+<section id="v-lobby" class="v hidden space-y-3">
+  <div class="text-center"><span data-i18n="code"></span>: <b id="roomcode" class="text-3xl tracking-widest"></b></div>
+  <div id="lobbylist" class="space-y-2"></div>
+  <div id="hostbox" class="hidden space-y-2">
+    <select id="rt"><option>100</option><option>150</option></select>
+    <button id="startRoom" class="btn" data-i18n="start"></button>
+  </div>
+  <button id="backL" class="btn alt" data-i18n="back"></button>
+</section>
 
-  <!-- المحتوى الرئيسي (القوائم أو الطاولة) -->
-  <main class="flex-grow flex flex-col items-center justify-center p-4">
-    
-    <!-- القائمة الرئيسية -->
-    <div id="mainMenu" class="max-w-md w-full bg-emerald-900/60 border border-emerald-700/60 p-8 rounded-2xl shadow-2xl backdrop-blur text-center space-y-6">
-      <h2 class="text-3xl font-extrabold text-amber-300" data-i18n="title">سايف دومينو</h2>
-      <p class="text-emerald-200 text-sm" data-i18n="tagline">لعبة الدومينو الجزائرية الأصيلة أونلاين</p>
+<section id="v-game" class="v hidden">
+  <div class="flex justify-between items-center mb-2"><b id="sc"></b><button id="backG" class="btn alt hidden" data-i18n="back"></button></div>
+  <div id="opps" class="flex flex-wrap gap-2 mb-2"></div>
+  <div id="table"><div id="board"></div></div>
+  <div id="choose" class="hidden flex gap-2 justify-center my-2" style="direction:ltr">
+    <button id="cl" class="btn">◀</button><button id="cr" class="btn">▶</button>
+  </div>
+  <p id="msg" class="text-center my-2 font-semibold"></p>
+  <div class="text-center"><button id="drawBtn" class="btn hidden" data-i18n="draw"></button></div>
+  <div id="hand"></div>
+  <div id="taunts" class="flex flex-wrap gap-2 justify-center"></div>
+</section>
 
-      <div class="space-y-3 pt-4">
-        <button id="btnVsAI" class="w-full bg-emerald-700 hover:bg-emerald-600 border border-emerald-500 font-bold py-3 rounded-xl transition shadow flex items-center justify-center gap-2 text-lg">
-          🤖 <span data-i18n="playVsAI">اللعب ضد البوت (منفرد)</span>
-        </button>
-        <button id="btnOnline" class="w-full bg-amber-600 hover:bg-amber-500 text-emerald-950 font-bold py-3 rounded-xl transition shadow flex items-center justify-center gap-2 text-lg">
-          🌐 <span data-i18n="playOnline">غرفة أونلاين خاصة</span>
-        </button>
-        <button id="btnLeaderboard" class="w-full bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700 font-bold py-3 rounded-xl transition shadow flex items-center justify-center gap-2">
-          🏆 <span data-i18n="leaderboard">لوحة المتصدرين</span>
-        </button>
-      </div>
-    </div>
+<section id="v-lb" class="v hidden space-y-3">
+  <table class="w-full text-center bg-slate-800 rounded"><thead><tr><th data-i18n="rank"></th><th></th><th data-i18n="wins"></th><th data-i18n="losses"></th><th data-i18n="score"></th><th data-i18n="rate"></th></tr></thead><tbody id="lbbody"></tbody></table>
+  <b data-i18n="history"></b>
+  <ul id="hist" class="bg-slate-800 rounded p-3 space-y-1"></ul>
+  <button id="backLb" class="btn alt" data-i18n="back"></button>
+</section>
 
-    <!-- صالة اللعب (Game Table) -->
-    <div id="gameScreen" class="hidden w-full max-w-6xl flex-col h-[85vh] justify-between table-felt rounded-2xl p-4 border border-emerald-600 relative shadow-2xl">
-      <!-- معلومات الجولة والسكور -->
-      <div class="flex justify-between items-center bg-emerald-950/70 p-3 rounded-xl border border-emerald-700">
-        <div>
-          <span class="text-amber-400 font-bold">السكور المستهدف: 100</span> | 
-          <span id="matchTypeDisplay" class="text-sm text-emerald-300">1vs1</span>
-        </div>
-        <div class="flex gap-6 text-sm">
-          <div>فريق 1: <span id="team1Score" class="font-bold text-amber-400">0</span></div>
-          <div>فريق 2: <span id="team2Score" class="font-bold text-amber-400">0</span></div>
-        </div>
-        <div id="turnIndicator" class="bg-amber-500 text-emerald-950 font-bold px-3 py-1 rounded-full text-xs animate-pulse">
-          دورك الآن
-        </div>
-      </div>
-
-      <!-- منطقة الطاولة ووسط اللعب (Board) -->
-      <div id="boardArea" class="flex-grow flex items-center justify-center overflow-x-auto gap-2 p-6 my-2 border-2 border-dashed border-emerald-700/50 rounded-xl relative">
-        <span class="text-emerald-400/50 text-sm absolute">ضع القطع هنا (المطابقة الآلية للأطراف)</span>
-      </div>
-
-      <!-- البونيا (المخزن) -->
-      <div id="boneyardArea" class="flex justify-center items-center gap-2 bg-emerald-950/40 p-2 rounded-lg">
-        <button id="drawTileBtn" class="bg-amber-600 hover:bg-amber-500 text-emerald-950 font-bold px-4 py-2 rounded shadow text-sm">
-          📥 سحب من البونيا (<span id="boneyardCount">14</span>)
-        </button>
-      </div>
-
-      <!-- قطع اللاعب في اليد + شريط التعليقات التكتيكية -->
-      <div class="flex flex-col gap-2">
-        <!-- التفاعلات التكتيكية (الدارجة) -->
-        <div id="tauntsBar" class="flex justify-center gap-2 overflow-x-auto py-1">
-          <button onclick="sendTaunt('mlih')" class="bg-emerald-800 hover:bg-emerald-700 text-xs px-3 py-1.5 rounded-full border border-emerald-600">مليح 👏</button>
-          <button onclick="sendTaunt('ketel')" class="bg-emerald-800 hover:bg-emerald-700 text-xs px-3 py-1.5 rounded-full border border-emerald-600">كتل 🧱</button>
-          <button onclick="sendTaunt('bala')" class="bg-emerald-800 hover:bg-emerald-700 text-xs px-3 py-1.5 rounded-full border border-emerald-600">بلع 🔒</button>
-          <button onclick="sendTaunt('nzidek')" class="bg-emerald-800 hover:bg-emerald-700 text-xs px-3 py-1.5 rounded-full border border-emerald-600">نزيدك 📈</button>
-          <button onclick="sendTaunt('laebak')" class="bg-emerald-800 hover:bg-emerald-700 text-xs px-3 py-1.5 rounded-full border border-emerald-600">لعبك 🎯</button>
-          <button onclick="sendTaunt('rassi')" class="bg-emerald-800 hover:bg-emerald-700 text-xs px-3 py-1.5 rounded-full border border-emerald-600">راسي 🧠</button>
-        </div>
-
-        <!-- قطع يد اللاعب -->
-        <div id="playerHand" class="flex justify-center gap-3 overflow-x-auto p-3 bg-emerald-950/80 rounded-xl border border-emerald-800 min-h-[90px]">
-          <!-- يتم تعبئتها ديناميكياً -->
-        </div>
-      </div>
-    </div>
-
-    <!-- نافذة الغرف الأونلاين -->
-    <div id="onlineModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div class="bg-emerald-950 border border-emerald-700 max-w-md w-full p-6 rounded-2xl shadow-2xl space-y-4">
-        <h3 class="text-xl font-bold text-amber-400">إدارة الغرف أونلاين</h3>
-        <div class="space-y-3">
-          <button id="createRoomBtn" class="w-full bg-amber-500 hover:bg-amber-600 text-emerald-950 font-bold py-2.5 rounded-xl transition">إنشاء غرفة جديدة</button>
-          <div class="flex gap-2">
-            <input type="text" id="roomCodeInput" placeholder="أدخل كود الغرفة" class="flex-grow bg-emerald-900 border border-emerald-700 px-3 py-2 rounded-xl outline-none text-sm">
-            <button id="joinRoomBtn" class="bg-emerald-700 hover:bg-emerald-600 font-bold px-4 py-2 rounded-xl text-sm transition">انضمام</button>
-          </div>
-        </div>
-        <button onclick="closeModals()" class="w-full bg-emerald-900/50 hover:bg-emerald-900 text-xs py-2 rounded-lg text-emerald-300">إغلاق</button>
-      </div>
-    </div>
-
-    <!-- نافذة تسجيل الدخول -->
-    <div id="authModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div class="bg-emerald-950 border border-emerald-700 max-w-md w-full p-6 rounded-2xl shadow-2xl space-y-4">
-        <h3 id="authModalTitle" class="text-xl font-bold text-amber-400">تسجيل الدخول</h3>
-        <form id="authForm" class="space-y-3">
-          <input type="text" id="authUsername" placeholder="اسم المستخدم" class="w-full bg-emerald-900 border border-emerald-700 px-3 py-2.5 rounded-xl outline-none text-sm" required>
-          <input type="password" id="authPassword" placeholder="كلمة المرور" class="w-full bg-emerald-900 border border-emerald-700 px-3 py-2.5 rounded-xl outline-none text-sm" required>
-          <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-emerald-950 font-bold py-2.5 rounded-xl transition">دخول</button>
-        </form>
-        <div class="flex justify-between text-xs text-emerald-300 pt-2">
-          <button type="button" id="toggleAuthModeBtn" class="underline">ليس لديك حساب؟ سجل الآن</button>
-          <button type="button" onclick="closeModals()" class="hover:text-amber-400">إلغاء</button>
-        </div>
-      </div>
-    </div>
-
-  </main>
-
-  <footer class="text-center p-4 text-xs text-emerald-400/60 border-t border-emerald-900">
-    SaivDOMINO Engine &copy; 2026 - جميع الحقوق محفوظة
-  </footer>
-
-  <!-- السكريبت الرئيسي -->
-  <script type="module" src="app.js"></script>
+</main>
+<div id="toast" class="hidden"></div>
+<script type="module" src="app.js"></script>
 </body>
 </html>

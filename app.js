@@ -25,6 +25,9 @@ function resume() {
   history.pushState({ g: 1 }, ''); show('game'); tick(); return true;
 }
 
+let tnames = ['', '']; // group names chosen by the host
+const tn = k => tnames[k] || t(k ? 'team2' : 'team1');
+
 /* ---------- views / history ---------- */
 const show = v => { cur = v; document.body.dataset.v = v; document.querySelectorAll('.v').forEach(e => e.classList.toggle('hidden', e.id !== 'v-' + v)); };
 const toast = m => { const e = $('toast'); e.textContent = m; e.classList.remove('hidden'); clearTimeout(tt); tt = setTimeout(() => e.classList.add('hidden'), 2500); };
@@ -74,7 +77,7 @@ const shuf = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.rand
 const deck = () => { const d = []; for (let a = 0; a < 7; a++) for (let b = a; b < 7; b++) d.push([a, b]); return d; };
 
 function newGame(players, target, room) {
-  const g = { mid: crypto.randomUUID(), room, n: players.length, target, sc: [0, 0], round: 0, mv: 0, over: false,
+  const g = { mid: crypto.randomUUID(), room, n: players.length, target, sc: [0, 0], wins: [0, 0], round: 0, mv: 0, over: false,
     p: players.map((p, i) => ({ ...p, team: i % 2, hand: [] })) };
   newRound(g, null); return g;
 }
@@ -100,7 +103,7 @@ function place(g, s, i, side) {
   if (!g.board.length) { g.board.push(x); g.L = x[0]; g.R = x[1]; g.cI = 0; }
   else if (side === 'L') { const o = x[1] === g.L ? x : [x[1], x[0]]; g.board.unshift(o); g.L = o[0]; g.cI++; }
   else { const o = x[0] === g.R ? x : [x[1], x[0]]; g.board.push(o); g.R = o[1]; }
-  g.passes = 0;
+  g.passes = 0; g.last = x;
 }
 function endRound(g, s) { // empty hand or blocked game (مبلعة)
   const tot = [0, 0]; g.p.forEach(p => tot[p.team] += pips(p.hand));
@@ -109,8 +112,11 @@ function endRound(g, s) { // empty hand or blocked game (مبلعة)
   else { if (tot[0] !== tot[1]) w = tot[0] < tot[1] ? 0 : 1; g.next = w < 0 ? s : g.p.findIndex(p => p.team === w); }
   const pts = w >= 0 ? tot[1 - w] : 0;
   if (w >= 0) g.sc[w] += pts;
-  g.roundOver = { w, pts };
-  if (Math.max(...g.sc) >= g.target && g.sc[0] !== g.sc[1]) g.over = true;
+  g.roundOver = { w, pts, by: s, d6: !g.p[s].hand.length && !!g.last && g.last[0] === 6 && g.last[1] === 6 };
+  if (Math.max(...g.sc) >= g.target && g.sc[0] !== g.sc[1]) { g.over = true; g.wins = g.wins || [0, 0]; g.wins[g.sc[0] > g.sc[1] ? 0 : 1]++; }
+}
+function nextGame() { // another game: scores restart, the games-won tally stays
+  const g = G; clearTimeout(T); g.mid = crypto.randomUUID(); g.sc = [0, 0]; g.over = false; g.round = 0; g.mv = 0; graceMv = -1; newRound(g, null); push();
 }
 function act(g, s, a) {
   if (g.over || g.roundOver || g.turn !== s) return false;
@@ -169,16 +175,17 @@ function tick() {
   const g = G; if (!g || !authority()) return;
   clearTimeout(T);
   if (g.over) return;
-  if (g.roundOver) { T = setTimeout(() => { newRound(g, g.next); push(); }, 3500); return; }
+  if (g.roundOver) { T = setTimeout(() => { newRound(g, g.next); push(); }, 6500); return; }
   const p = g.p[g.turn], lg = legal(g, g.turn), s = g.turn;
   if (!lg.length) {
     if (g.n === 2 && g.bone.length) { if (p.bot) T = setTimeout(() => { act(g, s, { t: 'draw' }); push(); }, 500); }
     else T = setTimeout(() => { act(g, s, { t: 'pass' }); push(); }, 900);
     return;
   }
-  if (p.bot) T = setTimeout(() => { act(g, s, botPick(g)); push(); }, 800);
+  if (p.bot) { const d = lg.length > 2 ? 3000 + Math.random() * 2000 : lg.length === 2 ? 1800 + Math.random() * 1200 : 1000; T = setTimeout(() => { act(g, s, botPick(g)); push(); }, d); }
 }
 function send(a) {
+  if (a.t === 'again') { if (authority()) nextGame(); else ch.send({ type: 'broadcast', event: 'intent', payload: { uid: me.id, seat, a } }); return; }
   if (a.t === 'play') graceMv = G.mv + 1;
   if (authority()) { if (act(G, seat, a)) push(); }
   else ch.send({ type: 'broadcast', event: 'intent', payload: { uid: me.id, seat, a } });
@@ -252,6 +259,12 @@ function confetti() {
     document.body.appendChild(e); setTimeout(() => e.remove(), 3500);
   }
 }
+function special(cls, big, sub, ms = 3400) {
+  const e = document.createElement('div'); e.className = 'sp ' + cls;
+  e.innerHTML = `<div class="spb">${[...big].map((c, i) => `<span style="--i:${i}">${c === ' ' ? '&nbsp;' : esc(c)}</span>`).join('')}</div><div class="sps">${esc(sub)}</div>`;
+  document.body.appendChild(e); setTimeout(() => e.remove(), ms);
+  confetti(); setTimeout(confetti, 700); if (cls.startsWith('capot')) setTimeout(confetti, 1500);
+}
 function fx(g) { // sounds + effects from state changes
   const f = fxS, mineTeam = g.p[seat].team;
   if (f.mid !== g.mid) Object.assign(f, { mid: g.mid, n: 0, bone: g.bone.length, round: g.round, ps: 0, turn: -1, ro: false, over: false });
@@ -261,6 +274,8 @@ function fx(g) { // sounds + effects from state changes
   if (g.turn === seat && f.turn !== seat && !g.roundOver && !g.over) sfx.turn();
   if (g.over && !f.over) { const w = g.sc[mineTeam] > g.sc[1 - mineTeam]; w ? (sfx.fan(), confetti()) : sfx.lose(); }
   else if (g.roundOver && !f.ro) { if (g.roundOver.w === mineTeam) { sfx.win(); confetti(); } else if (g.roundOver.w >= 0) sfx.lose(); }
+  if (g.roundOver && !f.ro && g.roundOver.d6) { sfx.d66(); special('d66', 'DOUBLE SIX', t('d66') + ' · ' + g.p[g.roundOver.by].name); }
+  if (g.over && !f.over && Math.min(...g.sc) === 0) { const w = g.sc[mineTeam] > g.sc[1 - mineTeam]; sfx.capot(); special('capot' + (w ? '' : ' bad'), 'CAPOOO!', t(w ? 'capotW' : 'capotL'), 5000); }
   Object.assign(f, { n: g.board.length, bone: g.bone.length, ps: g.passes, turn: g.turn, ro: !!g.roundOver, over: g.over });
 }
 function render() {
@@ -268,12 +283,13 @@ function render() {
   const g = G, mine = g.p[seat], lg = legal(g, seat), ok = new Set(lg.map(x => x[0]));
   const my = g.turn === seat && !g.roundOver && !g.over;
   fx(g);
-  $('sc').innerHTML = [0, 1].map(k => `<span class="tm ${k === mine.team ? 'me' : ''}">${t(k ? 'team2' : 'team1')}<b>${g.sc[k]}</b></span>`).join('') + `<span class="tg2">/${g.target}</span>`;
+  const nm = k => esc((g.names && g.names[k]) || t(k ? 'team2' : 'team1')), ser = g.wins && g.wins[0] + g.wins[1] ? `<span class="ser">${g.wins[0]} - ${g.wins[1]}</span>` : '';
+  $('sc').innerHTML = `<span class="tm ${mine.team === 0 ? 'me' : ''}">${nm(0)}<b>${g.sc[0]}</b></span>${ser}<span class="tm ${mine.team === 1 ? 'me' : ''}">${nm(1)}<b>${g.sc[1]}</b></span><span class="tg2">/${g.target}</span>`;
   const order = []; for (let k = g.n - 1; k >= 1; k--) order.push((seat + k) % g.n); // all others on top: left → right
   $('opps').className = g.n > 2 ? 'many' : '';
   $('opps').innerHTML = order.map(i => {
     const p = g.p[i];
-    return `<div class="seat ${p.team === mine.team ? 'ally' : ''} ${g.turn === i && !g.roundOver ? 'turn' : ''}"><span class="av" style="background:hsl(${hue(p.name)} 65% 50%)">${esc([...p.name][0])}</span><span class="nm">${esc(p.name)}</span><span class="bks">${'<i></i>'.repeat(Math.min(p.hand.length, 7))}</span><b>${p.hand.length}</b></div>`;
+    return `<div class="seat ${p.team === mine.team ? 'ally' : ''} ${g.turn === i && !g.roundOver ? 'turn' : ''}"><span class="av" style="background:hsl(${hue(p.name)} 65% 50%)">${esc([...p.name][0])}</span><span class="nm">${esc(p.name)}</span>${g.turn === i && p.bot && !g.roundOver ? '<span class="dots"><i></i><i></i><i></i></span>' : ''}<span class="bks">${'<i></i>'.repeat(Math.min(p.hand.length, 7))}</span><b>${p.hand.length}</b></div>`;
   }).join('');
   $('bone').textContent = '🂠 ' + g.bone.length; $('bone').classList.toggle('hidden', !g.bone.length);
   drawBoard(g);
@@ -282,6 +298,12 @@ function render() {
     : g.roundOver ? (g.roundOver.w < 0 ? t('tie') : (g.roundOver.w === mine.team ? t('youWin') : t('youLose'))) + (g.roundOver.pts ? ' +' + g.roundOver.pts : '')
     : my ? t('yourTurn') : t('wait') + ' ' + g.p[g.turn].name;
   $('msg').className = 'msg' + (my ? ' go' : '');
+  const ro = g.roundOver; $('result').classList.toggle('hidden', !ro);
+  if (ro) $('result').innerHTML = `<h3>${esc($('msg').textContent)}</h3>`
+    + (g.over && g.wins ? `<div class="ser2">${nm(0)} <b>${g.wins[0]}</b> - <b>${g.wins[1]}</b> ${nm(1)}</div>` : '')
+    + `<small style="text-align:center;opacity:.7">${t('tilesLeft')}</small>`
+    + g.p.map(p => `<div class="rp"><span class="av" style="background:hsl(${hue(p.name)} 65% 50%)">${esc([...p.name][0])}</span><span class="nm2">${esc(p.name)}</span><div class="tl">${p.hand.length ? p.hand.map(([a, b]) => tile(a, b, '', 'sm')).join('') : '🏁'}</div><b>${pips(p.hand)}</b></div>`).join('')
+    + (g.over ? `<div class="ra"><button class="btn" id="again">${t('again')}</button></div>` : '');
   $('drawBtn').classList.toggle('hidden', !(my && !lg.length && g.n === 2 && g.bone.length));
   $('backG').classList.toggle('hidden', !g.over);
   if (!my) $('choose').classList.add('hidden');
@@ -319,8 +341,8 @@ $('startBot').onclick = () => {
 };
 
 /* ---------- online private rooms (Realtime Broadcast + Presence) ---------- */
-$('createRoom').onclick = () => joinRoom(Math.random().toString(36).slice(2, 7).toUpperCase(), true);
-$('joinRoom').onclick = () => { const c = $('rcode').value.trim().toUpperCase(); if (c) joinRoom(c, false); };
+$('createRoom').onclick = () => { tnames = ['', '']; $('tn1').value = $('tn2').value = ''; joinRoom(Math.random().toString(36).slice(2, 7).toUpperCase(), true); };
+$('joinRoom').onclick = () => { const c = $('rcode').value.trim().toUpperCase(); if (c) { tnames = ['', '']; joinRoom(c, false); } };
 function joinRoom(c, h, g0 = null, s0 = 0) {
   code = c; host = h; assign = {}; lobby = []; G = g0; seat = s0;
   ch = sb.channel('dom:' + c, { config: { broadcast: { self: false }, presence: { key: me.id } } });
@@ -339,9 +361,11 @@ function joinRoom(c, h, g0 = null, s0 = 0) {
       render(); saveIfOver(); saveSess();
     })
     .on('broadcast', { event: 'intent' }, ({ payload: p }) => {
-      if (host && G && G.p[p.seat] && G.p[p.seat].uid === p.uid && act(G, p.seat, p.a)) push();
+      if (!host || !G || !G.p[p.seat] || G.p[p.seat].uid !== p.uid) return;
+      if (p.a.t === 'again') { if (G.over) nextGame(); } else if (act(G, p.seat, p.a)) push();
     })
-    .on('broadcast', { event: 'hello' }, () => { if (host && G) ch.send({ type: 'broadcast', event: 'state', payload: G }); })
+    .on('broadcast', { event: 'tnames' }, ({ payload }) => { tnames = payload; renderLobby(); })
+    .on('broadcast', { event: 'hello' }, () => { if (!host) return; ch.send({ type: 'broadcast', event: 'tnames', payload: tnames }); ch.send({ type: 'broadcast', event: 'assign', payload: assign }); if (G) ch.send({ type: 'broadcast', event: 'state', payload: G }); })
     .on('broadcast', { event: 'taunt' }, ({ payload }) => { sfx.taunt(); toast(payload); })
     .subscribe(async st => {
       if (st !== 'SUBSCRIBED') return; // also fires again after every automatic reconnect
@@ -356,7 +380,7 @@ function joinRoom(c, h, g0 = null, s0 = 0) {
 }
 function renderLobby() {
   $('lobbylist').innerHTML = lobby.map(p => `<div class="lrow"><span>${esc(p.name)}</span>
-    <button class="tg t${assign[p.uid] === 1 ? 2 : 1}" data-u="${p.uid}" ${host ? '' : 'disabled'}>${t(assign[p.uid] === 1 ? 'team2' : 'team1')}</button></div>`).join('');
+    <button class="tg t${assign[p.uid] === 1 ? 2 : 1}" data-u="${p.uid}" ${host ? '' : 'disabled'}>${esc(tn(assign[p.uid] === 1 ? 1 : 0))}</button></div>`).join('');
 }
 $('lobbylist').onclick = e => {
   const b = e.target.closest('.tg'); if (!b || !host) return;
@@ -367,7 +391,7 @@ $('startRoom').onclick = () => {
   const t0 = lobby.filter(p => assign[p.uid] === 0), t1 = lobby.filter(p => assign[p.uid] === 1);
   if (t0.length !== t1.length || ![1, 2].includes(t0.length)) return toast(t('needTeams'));
   const o = t0.length === 1 ? [t0[0], t1[0]] : [t0[0], t1[0], t0[1], t1[1]]; // seats alternate teams
-  G = newGame(o.map(p => ({ uid: p.uid, name: p.name })), +$('rt').value, code);
+  G = newGame(o.map(p => ({ uid: p.uid, name: p.name })), +$('rt').value, code); G.names = [tn(0), tn(1)];
   seat = G.p.findIndex(p => p.uid === me.id);
   show('game'); push();
 };
@@ -382,6 +406,8 @@ document.querySelectorAll('.snd').forEach(b => {
   b.onclick = () => { const v = toggle(); document.querySelectorAll('.snd').forEach(x => x.textContent = v ? '🔊' : '🔇'); };
 });
 $('exitG').onclick = () => history.back();
+['tn1', 'tn2'].forEach(id => $(id).oninput = () => { tnames = [$('tn1').value.trim(), $('tn2').value.trim()]; if (ch && host) ch.send({ type: 'broadcast', event: 'tnames', payload: tnames }); renderLobby(); });
+$('result').onclick = e => { if (e.target.closest('#again')) send({ t: 'again' }); };
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible' || !me) return;
   if (ch && ch.state !== 'joined' && ch.state !== 'joining') { const c = code, h = host, g = G, sd = seat; await sb.removeChannel(ch); ch = null; joinRoom(c, h, g, sd); return; }

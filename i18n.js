@@ -21,6 +21,9 @@ const D = {
     tie:'Égalité', needTeams:'Les deux groupes doivent avoir le même nombre de joueurs (1v1 ou 2v2)', leave:'Quitter la partie ?',
     matchWin:'🏆 Partie gagnée !', matchLose:'Partie perdue', history:'Mes derniers matchs', rank:'Rang', rate:'Taux de victoire' }
 };
+Object.assign(D.ar, { again:'لعبة جديدة', capotW:'كابو! خصمك ما دار حتى نقطة', capotL:'كابو… ما دّيتي حتى نقطة', d66:'دومينو بدبل 6!', tilesLeft:'القطع الباقية', teamNames:'أسماء المجموعات' });
+Object.assign(D.en, { again:'Play another game', capotW:'Capot! They scored nothing', capotL:'Capot… you scored nothing', d66:'Domino with the double six!', tilesLeft:'Tiles left', teamNames:'Group names' });
+Object.assign(D.fr, { again:'Nouvelle partie', capotW:'Capot ! Ils n’ont rien marqué', capotL:'Capot… vous n’avez rien marqué', d66:'Domino avec le double six !', tilesLeft:'Dominos restants', teamNames:'Noms des groupes' });
 let L = localStorage.getItem('lang') || 'ar';
 export const lang = () => L;
 export const t = k => (D[L] && D[L][k]) || k;

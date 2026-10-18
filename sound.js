@@ -22,6 +22,8 @@ export const sfx = {
   win() { [523, 659, 784, 1047].forEach((f, i) => tone(f, .25, 'triangle', .2, i * .1)); },
   lose() { [392, 330, 262].forEach((f, i) => tone(f, .3, 'sawtooth', .08, i * .16)); },
   fan() { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, .4, 'triangle', .22, i * .12)); },
+  capot() { [392, 523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, .35, 'square', .12, i * .09)); noise(.5, .4, 500); },
+  d66() { tone(880, .2, 'triangle', .25); tone(1320, .35, 'triangle', .25, .12); noise(.1, .3, 4000); },
   taunt() { tone(500, .1, 'square', .1, 0, 900); },
   click() { tone(700, .04, 'sine', .08); }
 };

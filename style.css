@@ -73,3 +73,31 @@ select.in{width:auto}
 .seat.ally{border-color:#4ade9b88}.seat.turn{border-color:var(--gold);animation:pulse 1.2s infinite}
 #opps.many .bks{display:none}
 #board .tile.end{box-shadow:0 0 0 2px #ffc247cc,0 0 14px #ffc24788}
+
+#sc{direction:ltr}.ser{font-weight:900;font-size:1.1rem;background:#ffffff1a;border-radius:.6rem;padding:0 .5rem}
+.dots{display:flex;gap:3px}.dots i{width:5px;height:5px;border-radius:50%;background:var(--gold);animation:dot 1s infinite}.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
+@keyframes dot{50%{transform:translateY(-4px);opacity:.4}}
+#result{position:absolute;inset:.3rem;z-index:5;overflow:auto;background:#0a1129f0;border:1px solid #ffffff26;border-radius:1.1rem;padding:.8rem;display:flex;flex-direction:column;gap:.5rem;animation:drop .35s}
+#result h3{margin:0;text-align:center;font-weight:900;font-size:1.3rem;color:var(--gold)}
+.ser2{text-align:center;font-weight:700}.ser2 b{color:var(--gold);font-size:1.3rem}
+.rp{display:flex;align-items:center;gap:.5rem;background:#ffffff10;border-radius:.8rem;padding:.4rem .6rem}
+.rp .av{width:1.7rem;height:1.7rem;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:900;flex:none}
+.rp .nm2{width:4.2rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;flex:none}
+.rp .tl{display:flex;flex-wrap:wrap;gap:3px;flex:1;direction:ltr}.rp>b{color:var(--gold)}
+.tile.sm{width:44px;height:22px;flex:none;box-shadow:0 1px 0 #b3a781}
+.ra{display:flex;gap:.5rem;justify-content:center;margin-top:.3rem}
+.sp{position:fixed;inset:0;z-index:80;display:grid;place-content:center;text-align:center;pointer-events:none;background:radial-gradient(circle,#0008,#000d);animation:fadein .3s}
+.sp::after{content:"";position:absolute;inset:-50%;z-index:-1;background:repeating-conic-gradient(#ffc24730 0 7deg,transparent 7deg 22deg);animation:rot 10s linear infinite;-webkit-mask:radial-gradient(circle,#000 8%,transparent 55%);mask:radial-gradient(circle,#000 8%,transparent 55%)}
+.spb{display:flex;justify-content:center;direction:ltr;font-weight:900;line-height:1;font-size:clamp(2.6rem,16vw,7rem)}
+.spb span{display:inline-block;background:linear-gradient(180deg,#fff,var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 5px 0 #b97d00) drop-shadow(0 0 22px #ffc247);animation:pop .7s cubic-bezier(.2,1.8,.4,1) both,bob 1.2s ease-in-out infinite;animation-delay:calc(var(--i)*.08s),calc(.8s + var(--i)*.08s)}
+.sp.bad .spb span{background:linear-gradient(180deg,#fff,var(--coral));filter:drop-shadow(0 5px 0 #8a1f1f) drop-shadow(0 0 22px var(--coral))}
+.sp.bad::after{background:repeating-conic-gradient(#ff6b6b30 0 7deg,transparent 7deg 22deg)}
+.sp.d66 .spb span{background:linear-gradient(180deg,#fff,var(--mint));filter:drop-shadow(0 5px 0 #1d8a5a) drop-shadow(0 0 22px var(--mint))}
+.sp.d66::after{background:repeating-conic-gradient(#4ade9b30 0 7deg,transparent 7deg 22deg)}
+.sps{margin-top:1.2rem;font-weight:900;font-size:1.15rem;animation:fadeup .6s .9s both}
+@keyframes pop{from{transform:translateY(90px) scale(0) rotate(-30deg);opacity:0}}
+@keyframes bob{50%{transform:translateY(-12px) rotate(3deg)}}
+@keyframes fadein{from{opacity:0}}@keyframes fadeup{from{opacity:0;transform:translateY(12px)}}@keyframes rot{to{transform:rotate(360deg)}}
+
+/* tiles keep left-to-right pip order even when the page is RTL (Arabic) */
+.tile{direction:ltr}

@@ -6,7 +6,7 @@ import { sfx, isOn, toggle } from './sound.js';
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = i => document.getElementById(i);
 const esc = s => String(s).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
-const TAUNTS = ['مليح', 'كتل', 'بلع', 'نزيدك خطرة', 'لعبك', 'راسي'];
+const TAUNTS = ['مليح', 'كتل', 'بلع', 'نزيدك خطرة', 'لا عجبك', 'راسي'];
 
 let me = null, profile = null, G = null, seat = 0, ch = null, host = false, code = '';
 let cur = 'auth', T, tt, quiet = false, savedMid = null, graceMv = -1, lobby = [], assign = {}, pend = null;
@@ -18,7 +18,7 @@ const clearSess = () => { try { localStorage.removeItem(SK); } catch {} };
 function resume() {
   let r = null; try { r = JSON.parse(localStorage.getItem(SK)); } catch {}
   if (!r || r.uid !== me.id || Date.now() - r.ts > 6 * 3600e3) { clearSess(); return false; }
-  if (r.G) fxS = { mid: r.G.mid, n: r.G.board.length, bone: r.G.bone.length, round: r.G.round, ps: r.G.passes, turn: r.G.turn, ro: !!r.G.roundOver, over: r.G.over }; // no replayed sounds
+  if (r.G) fxS = { mid: r.G.mid, n: r.G.board.length, bone: r.G.bone.length, round: r.G.round, ps: r.G.passes, turn: r.G.turn, ro: !!r.G.roundOver, over: r.G.over, rd: r.G.rdId }; // no replayed sounds
   if (r.code) { joinRoom(r.code, r.host, r.G, r.seat); return true; }
   if (!r.G) return false;
   G = r.G; seat = r.seat; ch = null; host = false;
@@ -63,11 +63,26 @@ async function loadProfile() {
   $('stats').innerHTML = `<div class="who">${esc(data.username)}</div><div class="stats">${[[t('wins'), data.wins], [t('losses'), data.losses], [t('score'), data.total_score], [t('rate'), r + '%']].map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('')}</div>`;
 }
 $('toLb').onclick = async () => {
-  show('lb');
-  const { data } = await sb.from('leaderboard').select('*');
-  $('lbbody').innerHTML = (data || []).map((p, i) => `<tr><td>${['🥇', '🥈', '🥉'][i] || i + 1}</td><td>${esc(p.username)}</td><td>${p.wins}</td><td>${p.losses}</td><td>${p.total_score}</td><td>${p.win_rate}%</td></tr>`).join('');
-  const h = await sb.from('match_logs').select('*').contains('players', [me.id]).order('played_at', { ascending: false }).limit(10);
-  $('hist').innerHTML = (h.data || []).map(m => `<li>${new Date(m.played_at).toLocaleDateString()} · ${esc(m.mode)} · ${m.team1_score} - ${m.team2_score}</li>`).join('');
+  show('lb'); $('statsBox').innerHTML = '…';
+  const { data } = await sb.from('match_logs').select('*').contains('players', [me.id]).order('played_at', { ascending: false }).limit(500);
+  const rows = (data || []).map(m => {
+    const side = (m.team1 || []).includes(me.id) ? 0 : (m.team2 || []).includes(me.id) ? 1 : -1;
+    const won = side >= 0 ? (side === 0 ? m.team1_score > m.team2_score : m.team2_score > m.team1_score) : m.winner_id === me.id;
+    const hi = Math.max(m.team1_score, m.team2_score), lo = Math.min(m.team1_score, m.team2_score);
+    const my = side < 0 ? (won ? hi : lo) : side ? m.team2_score : m.team1_score, opp = side < 0 ? (won ? lo : hi) : side ? m.team1_score : m.team2_score;
+    return { m, won, my, opp, bot: m.room_id === 'bot' };
+  });
+  const n = rows.length, W = rows.filter(r => r.won).length, cnt = f => rows.filter(f).length, pf = rows.reduce((a, r) => a + r.my, 0);
+  let best = 0, run = 0, cur = 0; [...rows].reverse().forEach(r => { run = r.won ? run + 1 : 0; best = Math.max(best, run); });
+  for (const r of rows) { if (r.won) cur++; else break; }
+  const wl = f => { const x = rows.filter(f), w = x.filter(r => r.won).length; return `${w} - ${x.length - w}`; };
+  const card = (v, k) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`;
+  $('statsBox').innerHTML = n ? `<div class="stats">${card(n, t('played'))}${card(W, t('wins'))}${card(n - W, t('losses'))}${card(Math.round(100 * W / n) + '%', t('rate'))}`
+    + `${card(pf, t('points'))}${card(Math.round(pf / n), t('avg'))}${card(cur, t('streak'))}${card(best, t('bestStreak'))}`
+    + `${card(cnt(r => r.won && r.opp === 0), t('capots'))}${card(cnt(r => !r.won && r.my === 0), t('capotsAg'))}${card(Math.max(0, ...rows.filter(r => r.won).map(r => r.my - r.opp)), t('margin'))}${card(cnt(r => !r.bot), t('online'))}</div>`
+    + [['1v1', r => r.m.mode === '1v1'], ['2v2', r => r.m.mode === '2v2'], [t('vsBotS'), r => r.bot], [t('online'), r => !r.bot]].map(([k, f]) => `<div class="lrow"><span>${k}</span><b>${wl(f)}</b></div>`).join('')
+    : `<p style="text-align:center;opacity:.7">${t('noData')}</p>`;
+  $('hist').innerHTML = rows.slice(0, 15).map(r => `<li><span class="${r.won ? 'w' : 'l'}">${r.won ? '✔' : '✘'}</span> ${new Date(r.m.played_at).toLocaleDateString()} · ${esc(r.m.mode)}${r.bot ? ' 🤖' : ''} · ${r.my} - ${r.opp}</li>`).join('');
 };
 $('backLb').onclick = () => show('menu');
 
@@ -81,17 +96,35 @@ function newGame(players, target, room) {
     p: players.map((p, i) => ({ ...p, team: i % 2, hand: [] })) };
   newRound(g, null); return g;
 }
+const hasMate = (h, x) => h.some(y => y !== x && (y[0] === x[0] || y[1] === x[0]));
+const openIdx = h => { // opening: a double that has a mate in hand first; a lone double never opens; else a normal tile
+  const all = h.map((_, i) => i), d = all.filter(i => h[i][0] === h[i][1] && hasMate(h, h[i]));
+  if (d.length) return d;
+  const n = all.filter(i => h[i][0] !== h[i][1]); return n.length ? n : all;
+};
+const badHand = h => { // redeal: 5+ doubles, or 6+ tiles sharing one number
+  if (h.filter(x => x[0] === x[1]).length >= 5) return 'dbl';
+  for (let n = 0; n < 7; n++) if (h.filter(x => x[0] === n || x[1] === n).length >= 6) return 'six';
+  return null;
+};
 function newRound(g, starter) {
-  const d = shuf(deck());
-  g.p.forEach(p => p.hand = d.splice(0, 7));
+  let d, first = null, tries = 0;
+  for (;;) {
+    d = shuf(deck()); g.p.forEach(p => p.hand = d.splice(0, 7));
+    const b = g.p.map(p => badHand(p.hand)), i = b.findIndex(Boolean);
+    if (i < 0 || tries++ > 50) break;
+    first = first || { by: g.p[i].name, why: b[i] };
+  }
+  g.rdInfo = first; g.rdId = (g.rdId || 0) + 1;
   g.bone = d; g.board = []; g.passes = 0; g.roundOver = null; g.must = null; g.round++;
-  if (starter === null) { // round 1: highest double starts (else highest tile)
+  if (starter === null) { // round 1: highest eligible double starts, else highest normal tile
     let bk = -1;
-    g.p.forEach((p, i) => p.hand.forEach(x => { const k = (x[0] === x[1] ? 100 : 0) + x[0] + x[1]; if (k > bk) { bk = k; g.must = x; g.turn = i; } }));
+    g.p.forEach((p, i) => openIdx(p.hand).forEach(j => { const x = p.hand[j], k = (x[0] === x[1] ? 100 : 0) + x[0] + x[1]; if (k > bk) { bk = k; g.must = x[0] === x[1] ? x : null; g.turn = i; } }));
   } else g.turn = starter;
 }
 function legal(g, s) {
-  const r = [];
+  const r = [], h = g.p[s].hand;
+  if (!g.board.length) return (g.must ? h.map((x, i) => i).filter(i => h[i][0] === g.must[0] && h[i][1] === g.must[1]) : openIdx(h)).map(i => [i, 'R']);
   g.p[s].hand.forEach((x, i) => {
     if (!g.board.length) { if (!g.must || (x[0] === g.must[0] && x[1] === g.must[1])) r.push([i, 'R']); }
     else { if (x[0] === g.L || x[1] === g.L) r.push([i, 'L']); if (x[0] === g.R || x[1] === g.R) r.push([i, 'R']); }
@@ -267,7 +300,7 @@ function special(cls, big, sub, ms = 3400) {
 }
 function fx(g) { // sounds + effects from state changes
   const f = fxS, mineTeam = g.p[seat].team;
-  if (f.mid !== g.mid) Object.assign(f, { mid: g.mid, n: 0, bone: g.bone.length, round: g.round, ps: 0, turn: -1, ro: false, over: false });
+  if (f.mid !== g.mid) Object.assign(f, { mid: g.mid, n: 0, bone: g.bone.length, round: g.round, ps: 0, turn: -1, ro: false, over: false, rd: 0 });
   if (g.round !== f.round) Object.assign(f, { n: 0, bone: g.bone.length, round: g.round, ps: 0, ro: false });
   if (g.board.length > f.n) sfx.place(); else if (g.bone.length < f.bone) sfx.draw();
   if (g.passes > f.ps) sfx.pass();
@@ -276,7 +309,8 @@ function fx(g) { // sounds + effects from state changes
   else if (g.roundOver && !f.ro) { if (g.roundOver.w === mineTeam) { sfx.win(); confetti(); } else if (g.roundOver.w >= 0) sfx.lose(); }
   if (g.roundOver && !f.ro && g.roundOver.d6) { sfx.d66(); special('d66', 'DOUBLE SIX', t('d66') + ' · ' + g.p[g.roundOver.by].name); }
   if (g.over && !f.over && Math.min(...g.sc) === 0) { const w = g.sc[mineTeam] > g.sc[1 - mineTeam]; sfx.capot(); special('capot' + (w ? '' : ' bad'), 'CAPOOO!', t(w ? 'capotW' : 'capotL'), 5000); }
-  Object.assign(f, { n: g.board.length, bone: g.bone.length, ps: g.passes, turn: g.turn, ro: !!g.roundOver, over: g.over });
+  if (g.rdInfo && g.rdId !== f.rd) { toast(g.rdInfo.by + ' · ' + t(g.rdInfo.why === 'dbl' ? 'rdDbl' : 'rdSix')); sfx.draw(); }
+  Object.assign(f, { n: g.board.length, bone: g.bone.length, ps: g.passes, turn: g.turn, ro: !!g.roundOver, over: g.over, rd: g.rdId });
 }
 function render() {
   if (!G || cur !== 'game') return;
@@ -408,6 +442,46 @@ document.querySelectorAll('.snd').forEach(b => {
 $('exitG').onclick = () => history.back();
 ['tn1', 'tn2'].forEach(id => $(id).oninput = () => { tnames = [$('tn1').value.trim(), $('tn2').value.trim()]; if (ch && host) ch.send({ type: 'broadcast', event: 'tnames', payload: tnames }); renderLobby(); });
 $('result').onclick = e => { if (e.target.closest('#again')) send({ t: 'again' }); };
+
+/* themes: day/night, 10 tables, 10 tile styles */
+const TABLES = [['#31497b', '#141f3d'], ['#1f7a4a', '#0d3b25'], ['#8a2c3c', '#3a0f19'], ['#5b3f9a', '#1d1238'], ['#b98a4e', '#5c3d1c'], ['#1c8a93', '#0a3a40'], ['#4a4f5a', '#14161b'], ['#d9693a', '#5a2210'], ['#c0507a', '#4a1230'], ['#6ba6d6', '#1d3a57']];
+const TILES = [['#fffdf4', '#e7dfc6', '#b3a781', '#4c5372', '#10152a', '#1a203640'], ['#3a3a42', '#16161b', '#000000', '#ffffff', '#cfd3e6', '#ffffff55'], ['#3f7be0', '#1b3f94', '#102a66', '#ffffff', '#dbe6ff', '#ffffff66'],
+  ['#2fbf86', '#0f6a4b', '#094a34', '#ffffff', '#d4ffe9', '#ffffff66'], ['#e5484d', '#8f1d24', '#5e1117', '#ffffff', '#ffe0e0', '#ffffff66'], ['#ffe08a', '#d9a521', '#9a7312', '#3a2a00', '#1a1200', '#3a2a0066'],
+  ['#c98f56', '#8c5a2d', '#5a3a1a', '#2a1a0a', '#120a04', '#2a1a0a66'], ['#8b5cf6', '#4c2a9c', '#311a6b', '#ffffff', '#ebe0ff', '#ffffff66'], ['#b8f2d8', '#7ed3b0', '#4a9a7c', '#17493a', '#0a251c', '#17493a55'], ['#ffffff55', '#ffffff22', '#ffffff44', '#ffffff', '#d8e6ff', '#ffffff66']];
+let th = {}; try { th = JSON.parse(localStorage.getItem('dom_theme')) || {}; } catch {}
+th = { mode: th.mode === 'light' ? 'light' : 'dark', table: (th.table | 0) % 10, tile: (th.tile | 0) % 10 };
+function applyTheme() {
+  const r = document.documentElement, k = TILES[th.tile];
+  r.dataset.mode = th.mode; r.style.setProperty('--felt1', TABLES[th.table][0]); r.style.setProperty('--felt2', TABLES[th.table][1]);
+  ['t1', 't2', 'te', 'p1', 'p2', 'dv'].forEach((n, i) => r.style.setProperty('--' + n, k[i]));
+  localStorage.setItem('dom_theme', JSON.stringify(th));
+  $('tblGrid').querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', i === th.table));
+  $('tileGrid').querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', i === th.tile));
+  $('mDark').classList.toggle('on', th.mode === 'dark'); $('mLight').classList.toggle('on', th.mode === 'light');
+}
+$('tblGrid').innerHTML = TABLES.map(([a, b], i) => `<button data-i="${i}" style="background:radial-gradient(circle,${a},${b})"></button>`).join('');
+$('tileGrid').innerHTML = TILES.map((k, i) => `<button data-i="${i}" style="background:linear-gradient(145deg,${k[0]},${k[1]});color:${k[4]}">●</button>`).join('');
+$('tblGrid').onclick = e => { const b = e.target.closest('button'); if (b) { th.table = +b.dataset.i; applyTheme(); } };
+$('tileGrid').onclick = e => { const b = e.target.closest('button'); if (b) { th.tile = +b.dataset.i; applyTheme(); } };
+$('mDark').onclick = () => { th.mode = 'dark'; applyTheme(); }; $('mLight').onclick = () => { th.mode = 'light'; applyTheme(); };
+$('pv').innerHTML = tile(6, 6, '', 'v') + tile(5, 3, '', 'v') + tile(2, 0, '', 'v');
+applyTheme();
+$('toSet').onclick = () => show('settings'); $('backSet').onclick = () => show('menu');
+
+/* profile: username, email, password */
+$('toProf').onclick = () => { $('pname').value = profile ? profile.username : ''; $('pemail').value = me.email || ''; show('profile'); };
+$('backProf').onclick = () => show('menu');
+$('saveName').onclick = async () => {
+  const u = $('pname').value.trim(); if (u.length < 3) return toast(t('nameShort'));
+  const { error } = await sb.from('profiles').update({ username: u }).eq('id', me.id);
+  if (error) return toast(error.code === '23505' ? t('nameTaken') : error.message);
+  await sb.auth.updateUser({ data: { username: u } }); await loadProfile(); toast('✔');
+};
+$('saveEmail').onclick = async () => { const { error } = await sb.auth.updateUser({ email: $('pemail').value.trim() }); toast(error ? error.message : t('checkMail')); };
+$('savePass').onclick = async () => {
+  const p = $('np').value; if (p.length < 6) return toast(t('passShort')); if (p !== $('np2').value) return toast(t('passMismatch'));
+  const { error } = await sb.auth.updateUser({ password: p }); toast(error ? error.message : '✔'); if (!error) $('np').value = $('np2').value = '';
+};
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible' || !me) return;
   if (ch && ch.state !== 'joined' && ch.state !== 'joining') { const c = code, h = host, g = G, sd = seat; await sb.removeChannel(ch); ch = null; joinRoom(c, h, g, sd); return; }

@@ -45,7 +45,7 @@
     <button id="createRoom" class="btn" data-i18n="create"></button>
     <div class="flex gap-2"><input id="rcode" class="in" data-ph="code" maxlength="5"><button id="joinRoom" class="btn alt" data-i18n="join"></button></div>
   </div>
-  <div class="flex gap-2"><button id="toLb" class="btn alt flex-1" data-i18n="lb"></button><button id="logout" class="btn alt flex-1" data-i18n="logout"></button></div>
+  <div class="grid grid-cols-2 gap-2"><button id="toLb" class="btn alt" data-i18n="lb"></button><button id="toSet" class="btn alt" data-i18n="look"></button><button id="toProf" class="btn alt" data-i18n="profile"></button><button id="logout" class="btn alt" data-i18n="logout"></button></div>
 </section>
 
 <section id="v-lobby" class="v hidden flex flex-col gap-4">
@@ -61,9 +61,24 @@
 </section>
 
 <section id="v-lb" class="v hidden flex flex-col gap-4">
-  <div class="card"><table class="lbt"><thead><tr><th data-i18n="rank"></th><th></th><th data-i18n="wins"></th><th data-i18n="losses"></th><th data-i18n="score"></th><th data-i18n="rate"></th></tr></thead><tbody id="lbbody"></tbody></table></div>
+  <div class="card"><b data-i18n="lb"></b><div id="statsBox" class="flex flex-col gap-2"></div></div>
   <div class="card"><b data-i18n="history"></b><ul id="hist"></ul></div>
   <button id="backLb" class="btn alt" data-i18n="back"></button>
+</section>
+
+<section id="v-settings" class="v hidden flex flex-col gap-4">
+  <div class="card"><b data-i18n="look"></b><div class="flex gap-2"><button id="mDark" class="btn alt flex-1" data-i18n="night"></button><button id="mLight" class="btn alt flex-1" data-i18n="day"></button></div></div>
+  <div id="pv" class="pv"></div>
+  <div class="card"><b data-i18n="tableStyle"></b><div id="tblGrid" class="sw"></div></div>
+  <div class="card"><b data-i18n="tileStyle"></b><div id="tileGrid" class="sw"></div></div>
+  <button id="backSet" class="btn alt" data-i18n="back"></button>
+</section>
+
+<section id="v-profile" class="v hidden flex flex-col gap-4">
+  <div class="card"><b data-i18n="uname"></b><input id="pname" class="in" maxlength="20"><button id="saveName" class="btn" data-i18n="save"></button></div>
+  <div class="card"><b data-i18n="email"></b><input id="pemail" class="in" type="email"><button id="saveEmail" class="btn alt" data-i18n="save"></button></div>
+  <div class="card"><b data-i18n="pass"></b><input id="np" class="in" type="password" data-ph="newPass" autocomplete="new-password"><input id="np2" class="in" type="password" data-ph="newPass2" autocomplete="new-password"><button id="savePass" class="btn" data-i18n="save"></button></div>
+  <button id="backProf" class="btn alt" data-i18n="back"></button>
 </section>
 </main>
 

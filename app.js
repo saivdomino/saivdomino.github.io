@@ -6,7 +6,7 @@ import { sfx, isOn, toggle } from './sound.js';
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = i => document.getElementById(i);
 const esc = s => String(s).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
-const TAUNTS = ['مليح', 'كتل', 'بلع', 'نزيدك خطرة', 'لا عجبك', 'راسي'];
+const TAUNTS = ['مليح', 'كتل', 'بلع', 'نزيدك خطرة', 'لعبك', 'راسي'];
 
 let me = null, profile = null, G = null, seat = 0, ch = null, host = false, code = '';
 let cur = 'auth', T, tt, quiet = false, savedMid = null, graceMv = -1, lobby = [], assign = {}, pend = null;
@@ -25,13 +25,14 @@ function resume() {
   history.pushState({ g: 1 }, ''); show('game'); tick(); return true;
 }
 
+let cfgN = 2, IW, IA, idleCd, offT = {};
 let tnames = ['', '']; // group names chosen by the host
 const tn = k => tnames[k] || t(k ? 'team2' : 'team1');
 
 /* ---------- views / history ---------- */
 const show = v => { cur = v; document.body.dataset.v = v; document.querySelectorAll('.v').forEach(e => e.classList.toggle('hidden', e.id !== 'v-' + v)); };
 const toast = m => { const e = $('toast'); e.textContent = m; e.classList.remove('hidden'); clearTimeout(tt); tt = setTimeout(() => e.classList.add('hidden'), 2500); };
-function leave() { clearSess(); clearTimeout(T); if (ch) { sb.removeChannel(ch); ch = null; } G = null; host = false; show('menu'); }
+function leave() { clearSess(); clearTimeout(T); clearTimeout(IW); clearTimeout(IA); hideIdle(); if (ch) { sb.removeChannel(ch); ch = null; } G = null; host = false; show('menu'); }
 window.onpopstate = () => {
   if (quiet) { quiet = false; return; }
   if (cur === 'game' || cur === 'lobby') { if (confirm(t('leave'))) leave(); else history.pushState({ g: 1 }, ''); }
@@ -80,7 +81,7 @@ $('toLb').onclick = async () => {
   $('statsBox').innerHTML = n ? `<div class="stats">${card(n, t('played'))}${card(W, t('wins'))}${card(n - W, t('losses'))}${card(Math.round(100 * W / n) + '%', t('rate'))}`
     + `${card(pf, t('points'))}${card(Math.round(pf / n), t('avg'))}${card(cur, t('streak'))}${card(best, t('bestStreak'))}`
     + `${card(cnt(r => r.won && r.opp === 0), t('capots'))}${card(cnt(r => !r.won && r.my === 0), t('capotsAg'))}${card(Math.max(0, ...rows.filter(r => r.won).map(r => r.my - r.opp)), t('margin'))}${card(cnt(r => !r.bot), t('online'))}</div>`
-    + [['1v1', r => r.m.mode === '1v1'], ['2v2', r => r.m.mode === '2v2'], [t('vsBotS'), r => r.bot], [t('online'), r => !r.bot]].map(([k, f]) => `<div class="lrow"><span>${k}</span><b>${wl(f)}</b></div>`).join('')
+    + [['1v1', r => r.m.mode === '1v1'], ['2v2', r => r.m.mode === '2v2'], [t('free'), r => r.m.mode === 'free'], [t('vsBotS'), r => r.bot], [t('online'), r => !r.bot]].map(([k, f]) => `<div class="lrow"><span>${k}</span><b>${wl(f)}</b></div>`).join('')
     : `<p style="text-align:center;opacity:.7">${t('noData')}</p>`;
   $('hist').innerHTML = rows.slice(0, 15).map(r => `<li><span class="${r.won ? 'w' : 'l'}">${r.won ? '✔' : '✘'}</span> ${new Date(r.m.played_at).toLocaleDateString()} · ${esc(r.m.mode)}${r.bot ? ' 🤖' : ''} · ${r.my} - ${r.opp}</li>`).join('');
 };
@@ -91,9 +92,9 @@ const pips = h => h.reduce((a, x) => a + x[0] + x[1], 0);
 const shuf = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const deck = () => { const d = []; for (let a = 0; a < 7; a++) for (let b = a; b < 7; b++) d.push([a, b]); return d; };
 
-function newGame(players, target, room) {
-  const g = { mid: crypto.randomUUID(), room, n: players.length, target, sc: [0, 0], wins: [0, 0], round: 0, mv: 0, over: false,
-    p: players.map((p, i) => ({ ...p, team: i % 2, hand: [] })) };
+function newGame(players, target, room, free) {
+  const nT = free ? players.length : 2, g = { free: !!free, mid: crypto.randomUUID(), room, n: players.length, target, sc: Array(nT).fill(0), wins: Array(nT).fill(0), round: 0, mv: 0, over: false,
+    p: players.map((p, i) => ({ ...p, team: free ? i : i % 2, hand: [] })) };
   newRound(g, null); return g;
 }
 const hasMate = (h, x) => h.some(y => y !== x && (y[0] === x[0] || y[1] === x[0]));
@@ -116,7 +117,7 @@ function newRound(g, starter) {
     first = first || { by: g.p[i].name, why: b[i] };
   }
   g.rdInfo = first; g.rdId = (g.rdId || 0) + 1;
-  g.bone = d; g.board = []; g.passes = 0; g.roundOver = null; g.must = null; g.round++;
+  g.bone = g.n === 2 ? d : []; g.board = []; g.passes = 0; g.roundOver = null; g.must = null; g.round++;
   if (starter === null) { // round 1: highest eligible double starts, else highest normal tile
     let bk = -1;
     g.p.forEach((p, i) => openIdx(p.hand).forEach(j => { const x = p.hand[j], k = (x[0] === x[1] ? 100 : 0) + x[0] + x[1]; if (k > bk) { bk = k; g.must = x[0] === x[1] ? x : null; g.turn = i; } }));
@@ -139,14 +140,14 @@ function place(g, s, i, side) {
   g.passes = 0; g.last = x;
 }
 function endRound(g, s) { // empty hand or blocked game (مبلعة)
-  const tot = [0, 0]; g.p.forEach(p => tot[p.team] += pips(p.hand));
+  const tot = g.sc.map(() => 0); g.p.forEach(p => tot[p.team] += pips(p.hand));
   let w = -1;
   if (!g.p[s].hand.length) { w = g.p[s].team; g.next = s; }
-  else { if (tot[0] !== tot[1]) w = tot[0] < tot[1] ? 0 : 1; g.next = w < 0 ? s : g.p.findIndex(p => p.team === w); }
-  const pts = w >= 0 ? tot[1 - w] : 0;
+  else { { const mn = Math.min(...tot); if (tot.filter(v => v === mn).length === 1) w = tot.indexOf(mn); } g.next = w < 0 ? s : g.p.findIndex(p => p.team === w); }
+  const pts = w >= 0 ? tot.reduce((a, v) => a + v, 0) - tot[w] : 0;
   if (w >= 0) g.sc[w] += pts;
   g.roundOver = { w, pts, by: s, d6: !g.p[s].hand.length && !!g.last && g.last[0] === 6 && g.last[1] === 6 };
-  if (Math.max(...g.sc) >= g.target && g.sc[0] !== g.sc[1]) { g.over = true; g.wins = g.wins || [0, 0]; g.wins[g.sc[0] > g.sc[1] ? 0 : 1]++; }
+  { const mx = Math.max(...g.sc); if (mx >= g.target && g.sc.filter(v => v === mx).length === 1) { g.over = true; g.wins = g.wins || g.sc.map(() => 0); g.wins[g.sc.indexOf(mx)]++; } }
 }
 function nextGame() { // another game: scores restart, the games-won tally stays
   const g = G; clearTimeout(T); g.mid = crypto.randomUUID(); g.sc = [0, 0]; g.over = false; g.round = 0; g.mv = 0; graceMv = -1; newRound(g, null); push();
@@ -198,6 +199,26 @@ function botPick(g) {
 }
 
 /* ---------- turn loop (offline or room host acts as authority) ---------- */
+/* ---------- online: idle or departed player -> a robot plays in his place ---------- */
+const notice = m => { toast(m); if (ch) ch.send({ type: 'broadcast', event: 'notice', payload: m }); };
+const sendCfg = () => ch && ch.send({ type: 'broadcast', event: 'cfg', payload: cfgN });
+function idleTimers(g) { // room host only: 15s idle -> warning, 5s later the robot takes over
+  clearTimeout(IW); clearTimeout(IA);
+  if (!ch || !host || g.over || g.roundOver) return;
+  const p = g.p[g.turn]; if (p.bot || p.auto || !p.uid) return;
+  IW = setTimeout(() => { if (p.uid === me.id) warnMe(); else ch.send({ type: 'broadcast', event: 'idle', payload: { uid: p.uid } }); }, 15000);
+  IA = setTimeout(() => { p.auto = true; notice(`${p.name} · ${t('idleAuto')}`); push(); }, 20000);
+}
+function warnMe() {
+  let n = 5; $('idle').classList.remove('hidden'); $('idleN').textContent = n; clearInterval(idleCd);
+  idleCd = setInterval(() => { n--; $('idleN').textContent = Math.max(n, 0); if (n <= 0) hideIdle(); }, 1000);
+}
+function hideIdle() { clearInterval(idleCd); $('idle').classList.add('hidden'); }
+function kick(uid) { // host removes a player; a robot takes his seat
+  if (!host) return; ch.send({ type: 'broadcast', event: 'kick', payload: { uid } });
+  const p = G && G.p.find(x => x.uid === uid);
+  if (p) { p.uid = null; p.bot = 1; p.lvl = 'medium'; p.auto = false; G.kicked = [...(G.kicked || []), uid]; notice(`${p.name} · ${t('kickedN')}`); push(); }
+}
 const authority = () => !ch || host;
 function push() {
   if (ch && host) ch.send({ type: 'broadcast', event: 'state', payload: G });
@@ -206,16 +227,16 @@ function push() {
 function tick() {
   render();
   const g = G; if (!g || !authority()) return;
-  clearTimeout(T);
+  clearTimeout(T); idleTimers(g);
   if (g.over) return;
   if (g.roundOver) { T = setTimeout(() => { newRound(g, g.next); push(); }, 6500); return; }
   const p = g.p[g.turn], lg = legal(g, g.turn), s = g.turn;
   if (!lg.length) {
-    if (g.n === 2 && g.bone.length) { if (p.bot) T = setTimeout(() => { act(g, s, { t: 'draw' }); push(); }, 500); }
+    if (g.n === 2 && g.bone.length) { if (p.bot || p.auto) T = setTimeout(() => { act(g, s, { t: 'draw' }); push(); }, 500); }
     else T = setTimeout(() => { act(g, s, { t: 'pass' }); push(); }, 900);
     return;
   }
-  if (p.bot) { const d = lg.length > 2 ? 3000 + Math.random() * 2000 : lg.length === 2 ? 1800 + Math.random() * 1200 : 1000; T = setTimeout(() => { act(g, s, botPick(g)); push(); }, d); }
+  if (p.bot || p.auto) { const d = lg.length > 2 ? 2000 + Math.random() * 1000 : lg.length === 2 ? 1500 + Math.random() * 1000 : 1000; T = setTimeout(() => { act(g, s, botPick(g)); push(); }, d); }
 }
 function send(a) {
   if (a.t === 'again') { if (authority()) nextGame(); else ch.send({ type: 'broadcast', event: 'intent', payload: { uid: me.id, seat, a } }); return; }
@@ -228,9 +249,10 @@ function send(a) {
 async function saveIfOver() {
   if (!G || !G.over || savedMid === G.mid || !me || !G.p.some(p => p.uid === me.id)) return;
   savedMid = G.mid;
-  const ids = k => G.p.filter(p => p.team === k && p.uid).map(p => p.uid);
-  const { error } = await sb.rpc('record_match', { p_match: G.mid, p_room: G.room, p_mode: G.n === 2 ? '1v1' : '2v2',
-    p_t1: G.sc[0], p_t2: G.sc[1], p_team1: ids(0), p_team2: ids(1) });
+  const ids = f => G.p.filter(p => p.uid && f(p)).map(p => p.uid), wt = G.sc.indexOf(Math.max(...G.sc));
+  const a = G.free ? { m: 'free', t1: G.sc[wt], t2: Math.max(...G.sc.filter((_, k) => k !== wt)), x: ids(p => p.team === wt), y: ids(p => p.team !== wt) }
+    : { m: G.n === 2 ? '1v1' : '2v2', t1: G.sc[0], t2: G.sc[1], x: ids(p => p.team === 0), y: ids(p => p.team === 1) };
+  const { error } = await sb.rpc('record_match', { p_match: G.mid, p_room: G.room, p_mode: a.m, p_t1: a.t1, p_t2: a.t2, p_team1: a.x, p_team2: a.y });
   if (error) toast(error.message); else loadProfile();
 }
 
@@ -305,41 +327,45 @@ function fx(g) { // sounds + effects from state changes
   if (g.board.length > f.n) sfx.place(); else if (g.bone.length < f.bone) sfx.draw();
   if (g.passes > f.ps) sfx.pass();
   if (g.turn === seat && f.turn !== seat && !g.roundOver && !g.over) sfx.turn();
-  if (g.over && !f.over) { const w = g.sc[mineTeam] > g.sc[1 - mineTeam]; w ? (sfx.fan(), confetti()) : sfx.lose(); }
+  if (g.over && !f.over) { const w = g.sc.indexOf(Math.max(...g.sc)) === mineTeam; w ? (sfx.fan(), confetti()) : sfx.lose(); }
   else if (g.roundOver && !f.ro) { if (g.roundOver.w === mineTeam) { sfx.win(); confetti(); } else if (g.roundOver.w >= 0) sfx.lose(); }
   if (g.roundOver && !f.ro && g.roundOver.d6) { sfx.d66(); special('d66', 'DOUBLE SIX', t('d66') + ' · ' + g.p[g.roundOver.by].name); }
-  if (g.over && !f.over && Math.min(...g.sc) === 0) { const w = g.sc[mineTeam] > g.sc[1 - mineTeam]; sfx.capot(); special('capot' + (w ? '' : ' bad'), 'CAPOOO!', t(w ? 'capotW' : 'capotL'), 5000); }
+  if (g.over && !f.over && g.sc.filter(v => v > 0).length === 1) { const w = g.sc.indexOf(Math.max(...g.sc)) === mineTeam; sfx.capot(); special('capot' + (w ? '' : ' bad'), 'CAPOOO!', t(w ? 'capotW' : 'capotL'), 5000); }
   if (g.rdInfo && g.rdId !== f.rd) { toast(g.rdInfo.by + ' · ' + t(g.rdInfo.why === 'dbl' ? 'rdDbl' : 'rdSix')); sfx.draw(); }
   Object.assign(f, { n: g.board.length, bone: g.bone.length, ps: g.passes, turn: g.turn, ro: !!g.roundOver, over: g.over, rd: g.rdId });
 }
 function render() {
   if (!G || cur !== 'game') return;
   const g = G, mine = g.p[seat], lg = legal(g, seat), ok = new Set(lg.map(x => x[0]));
-  const my = g.turn === seat && !g.roundOver && !g.over;
+  const my = g.turn === seat && !g.roundOver && !g.over && !mine.auto;
   fx(g);
-  const nm = k => esc((g.names && g.names[k]) || t(k ? 'team2' : 'team1')), ser = g.wins && g.wins[0] + g.wins[1] ? `<span class="ser">${g.wins[0]} - ${g.wins[1]}</span>` : '';
-  $('sc').innerHTML = `<span class="tm ${mine.team === 0 ? 'me' : ''}">${nm(0)}<b>${g.sc[0]}</b></span>${ser}<span class="tm ${mine.team === 1 ? 'me' : ''}">${nm(1)}<b>${g.sc[1]}</b></span><span class="tg2">/${g.target}</span>`;
+  const nm = k => esc((g.names && g.names[k]) || (g.free ? g.p[k].name : t(k ? 'team2' : 'team1'))), ser = g.wins && g.wins.some(Boolean) ? `<span class="ser">${g.wins.join(' - ')}</span>` : '';
+  $('sc').innerHTML = g.sc.map((v, k) => `<span class="tm ${mine.team === k ? 'me' : ''}">${nm(k)}<b>${v}</b></span>`).join('') + ser + `<span class="tg2">/${g.target}</span>`;
   const order = []; for (let k = g.n - 1; k >= 1; k--) order.push((seat + k) % g.n); // all others on top: left → right
   $('opps').className = g.n > 2 ? 'many' : '';
   $('opps').innerHTML = order.map(i => {
     const p = g.p[i];
-    return `<div class="seat ${p.team === mine.team ? 'ally' : ''} ${g.turn === i && !g.roundOver ? 'turn' : ''}"><span class="av" style="background:hsl(${hue(p.name)} 65% 50%)">${esc([...p.name][0])}</span><span class="nm">${esc(p.name)}</span>${g.turn === i && p.bot && !g.roundOver ? '<span class="dots"><i></i><i></i><i></i></span>' : ''}<span class="bks">${'<i></i>'.repeat(Math.min(p.hand.length, 7))}</span><b>${p.hand.length}</b></div>`;
+    return `<div class="seat ${p.team === mine.team ? 'ally' : ''} ${g.turn === i && !g.roundOver ? 'turn' : ''}"><span class="av" style="background:hsl(${hue(p.name)} 65% 50%)">${esc([...p.name][0])}</span><span class="nm">${p.auto ? '🤖 ' : ''}${esc(p.name)}</span>${g.turn === i && (p.bot || p.auto) && !g.roundOver ? '<span class="dots"><i></i><i></i><i></i></span>' : ''}<span class="bks">${'<i></i>'.repeat(Math.min(p.hand.length, 7))}</span><b>${p.hand.length}</b></div>`;
   }).join('');
   $('bone').textContent = '🂠 ' + g.bone.length; $('bone').classList.toggle('hidden', !g.bone.length);
   drawBoard(g);
   $('hand').innerHTML = mine.hand.map(([a, b], i) => tile(a, b, `data-i="${i}"`, 'v' + (my && ok.has(i) ? ' ok' : ''))).join('');
-  $('msg').textContent = g.over ? (g.sc[mine.team] > g.sc[1 - mine.team] ? t('matchWin') : t('matchLose'))
+  $('msg').textContent = g.over ? (g.sc.indexOf(Math.max(...g.sc)) === mine.team ? t('matchWin') : t('matchLose'))
     : g.roundOver ? (g.roundOver.w < 0 ? t('tie') : (g.roundOver.w === mine.team ? t('youWin') : t('youLose'))) + (g.roundOver.pts ? ' +' + g.roundOver.pts : '')
     : my ? t('yourTurn') : t('wait') + ' ' + g.p[g.turn].name;
   $('msg').className = 'msg' + (my ? ' go' : '');
   const ro = g.roundOver; $('result').classList.toggle('hidden', !ro);
   if (ro) $('result').innerHTML = `<h3>${esc($('msg').textContent)}</h3>`
-    + (g.over && g.wins ? `<div class="ser2">${nm(0)} <b>${g.wins[0]}</b> - <b>${g.wins[1]}</b> ${nm(1)}</div>` : '')
+    + (g.over && g.wins ? `<div class="ser2">${g.wins.map((w, k) => `${nm(k)} <b>${w}</b>`).join(' - ')}</div>` : '')
     + `<small style="text-align:center;opacity:.7">${t('tilesLeft')}</small>`
     + g.p.map(p => `<div class="rp"><span class="av" style="background:hsl(${hue(p.name)} 65% 50%)">${esc([...p.name][0])}</span><span class="nm2">${esc(p.name)}</span><div class="tl">${p.hand.length ? p.hand.map(([a, b]) => tile(a, b, '', 'sm')).join('') : '🏁'}</div><b>${pips(p.hand)}</b></div>`).join('')
     + (g.over ? `<div class="ra"><button class="btn" id="again">${t('again')}</button></div>` : '');
   $('drawBtn').classList.toggle('hidden', !(my && !lg.length && g.n === 2 && g.bone.length));
   $('backG').classList.toggle('hidden', !g.over);
+  $('backBar').classList.toggle('hidden', !mine.auto);
+  if (mine.auto || g.turn !== seat || g.roundOver) hideIdle();
+  $('infoBtn').classList.toggle('hidden', !ch);
+  if (!$('info').classList.contains('hidden')) showInfo();
   if (!my) $('choose').classList.add('hidden');
   document.querySelectorAll('.tb').forEach(b => b.disabled = !canTaunt());
 }
@@ -375,7 +401,7 @@ $('startBot').onclick = () => {
 };
 
 /* ---------- online private rooms (Realtime Broadcast + Presence) ---------- */
-$('createRoom').onclick = () => { tnames = ['', '']; $('tn1').value = $('tn2').value = ''; joinRoom(Math.random().toString(36).slice(2, 7).toUpperCase(), true); };
+$('createRoom').onclick = () => { tnames = ['', '']; $('tn1').value = $('tn2').value = ''; cfgN = +$('cm').value; joinRoom(Math.random().toString(36).slice(2, 7).toUpperCase(), true); };
 $('joinRoom').onclick = () => { const c = $('rcode').value.trim().toUpperCase(); if (c) { tnames = ['', '']; joinRoom(c, false); } };
 function joinRoom(c, h, g0 = null, s0 = 0) {
   code = c; host = h; assign = {}; lobby = []; G = g0; seat = s0;
@@ -388,6 +414,17 @@ function joinRoom(c, h, g0 = null, s0 = 0) {
     }
     renderLobby();
   })
+    .on('presence', { event: 'join' }, ({ key }) => { if (host) { sendCfg(); clearTimeout(offT[key]); } })
+    .on('presence', { event: 'leave' }, ({ key }) => {
+      if (!host || !G || G.over || key === me.id) return;
+      const i = G.p.findIndex(p => p.uid === key); if (i < 0 || G.p[i].bot) return;
+      clearTimeout(offT[key]);
+      offT[key] = setTimeout(() => { const p = G && G.p[i]; if (!p || p.auto || p.bot) return; p.auto = true; p.off = true; notice(`${p.name} · ${t('left')}`); push(); }, 8000);
+    })
+    .on('broadcast', { event: 'cfg' }, ({ payload }) => { cfgN = payload; renderLobby(); })
+    .on('broadcast', { event: 'notice' }, ({ payload }) => toast(payload))
+    .on('broadcast', { event: 'idle' }, ({ payload }) => { if (payload.uid === me.id) warnMe(); })
+    .on('broadcast', { event: 'kick' }, ({ payload }) => { if (payload.uid === me.id) { toast(t('kicked')); goBack(); } })
     .on('broadcast', { event: 'assign' }, ({ payload }) => { assign = payload; renderLobby(); })
     .on('broadcast', { event: 'state' }, ({ payload }) => {
       G = payload; seat = G.p.findIndex(p => p.uid === me.id); if (seat < 0) return;
@@ -396,10 +433,17 @@ function joinRoom(c, h, g0 = null, s0 = 0) {
     })
     .on('broadcast', { event: 'intent' }, ({ payload: p }) => {
       if (!host || !G || !G.p[p.seat] || G.p[p.seat].uid !== p.uid) return;
-      if (p.a.t === 'again') { if (G.over) nextGame(); } else if (act(G, p.seat, p.a)) push();
+      if (p.a.t === 'again') { if (G.over) nextGame(); }
+      else if (p.a.t === 'keep') { if (G.turn === p.seat) idleTimers(G); }
+      else if (p.a.t === 'back') { G.p[p.seat].auto = false; G.p[p.seat].off = false; push(); }
+      else if (act(G, p.seat, p.a)) push();
     })
     .on('broadcast', { event: 'tnames' }, ({ payload }) => { tnames = payload; renderLobby(); })
-    .on('broadcast', { event: 'hello' }, () => { if (!host) return; ch.send({ type: 'broadcast', event: 'tnames', payload: tnames }); ch.send({ type: 'broadcast', event: 'assign', payload: assign }); if (G) ch.send({ type: 'broadcast', event: 'state', payload: G }); })
+    .on('broadcast', { event: 'hello' }, ({ payload: u }) => {
+      if (!host) return;
+      if (G && G.kicked && G.kicked.includes(u)) return ch.send({ type: 'broadcast', event: 'kick', payload: { uid: u } });
+      sendCfg(); ch.send({ type: 'broadcast', event: 'tnames', payload: tnames }); ch.send({ type: 'broadcast', event: 'assign', payload: assign }); if (G) ch.send({ type: 'broadcast', event: 'state', payload: G });
+    })
     .on('broadcast', { event: 'taunt' }, ({ payload }) => { sfx.taunt(); toast(payload); })
     .subscribe(async st => {
       if (st !== 'SUBSCRIBED') return; // also fires again after every automatic reconnect
@@ -413,19 +457,28 @@ function joinRoom(c, h, g0 = null, s0 = 0) {
   saveSess();
 }
 function renderLobby() {
-  $('lobbylist').innerHTML = lobby.map(p => `<div class="lrow"><span>${esc(p.name)}</span>
-    <button class="tg t${assign[p.uid] === 1 ? 2 : 1}" data-u="${p.uid}" ${host ? '' : 'disabled'}>${esc(tn(assign[p.uid] === 1 ? 1 : 0))}</button></div>`).join('');
+  $('lobbyInfo').textContent = `${t('players')} ${lobby.length}/${cfgN} · ${cfgN === 2 ? '1v1' : cfgN === 4 ? '2v2' : t('free')}`;
+  $('tnbox').classList.toggle('hidden', cfgN !== 4);
+  $('lobbylist').innerHTML = lobby.map(p => `<div class="lrow"><span>${esc(p.name)}</span><span class="flex gap-2">`
+    + (cfgN === 4 ? `<button class="tg t${assign[p.uid] === 1 ? 2 : 1}" data-u="${p.uid}" ${host ? '' : 'disabled'}>${esc(tn(assign[p.uid] === 1 ? 1 : 0))}</button>` : '')
+    + (host && p.uid !== me.id ? `<button class="tg kk" data-k="${p.uid}">✕</button>` : '') + '</span></div>').join('');
 }
 $('lobbylist').onclick = e => {
-  const b = e.target.closest('.tg'); if (!b || !host) return;
+  const k = e.target.closest('.kk'); if (k && host) return kick(k.dataset.k);
+  const b = e.target.closest('.tg:not(.kk)'); if (!b || !host) return;
   assign[b.dataset.u] = assign[b.dataset.u] === 1 ? 0 : 1;
   ch.send({ type: 'broadcast', event: 'assign', payload: assign }); renderLobby();
 };
 $('startRoom').onclick = () => {
-  const t0 = lobby.filter(p => assign[p.uid] === 0), t1 = lobby.filter(p => assign[p.uid] === 1);
-  if (t0.length !== t1.length || ![1, 2].includes(t0.length)) return toast(t('needTeams'));
-  const o = t0.length === 1 ? [t0[0], t1[0]] : [t0[0], t1[0], t0[1], t1[1]]; // seats alternate teams
-  G = newGame(o.map(p => ({ uid: p.uid, name: p.name })), +$('rt').value, code); G.names = [tn(0), tn(1)];
+  if (lobby.length !== cfgN) return toast(t('needN').replace('{n}', cfgN));
+  let o;
+  if (cfgN === 4) {
+    const t0 = lobby.filter(p => assign[p.uid] === 0), t1 = lobby.filter(p => assign[p.uid] === 1);
+    if (t0.length !== 2 || t1.length !== 2) return toast(t('needTeams'));
+    o = [t0[0], t1[0], t0[1], t1[1]]; // seats alternate teams
+  } else o = lobby.slice(0, cfgN);
+  G = newGame(o.map(p => ({ uid: p.uid, name: p.name })), +$('rt').value, code, cfgN === 3);
+  G.names = cfgN === 4 ? [tn(0), tn(1)] : G.p.map(p => p.name);
   seat = G.p.findIndex(p => p.uid === me.id);
   show('game'); push();
 };
@@ -442,26 +495,40 @@ document.querySelectorAll('.snd').forEach(b => {
 $('exitG').onclick = () => history.back();
 ['tn1', 'tn2'].forEach(id => $(id).oninput = () => { tnames = [$('tn1').value.trim(), $('tn2').value.trim()]; if (ch && host) ch.send({ type: 'broadcast', event: 'tnames', payload: tnames }); renderLobby(); });
 $('result').onclick = e => { if (e.target.closest('#again')) send({ t: 'again' }); };
+$('idleX').onclick = () => { hideIdle(); if (authority()) idleTimers(G); else ch.send({ type: 'broadcast', event: 'intent', payload: { uid: me.id, seat, a: { t: 'keep' } } }); };
+$('imBack').onclick = () => { if (authority()) { G.p[seat].auto = false; G.p[seat].off = false; push(); } else ch.send({ type: 'broadcast', event: 'intent', payload: { uid: me.id, seat, a: { t: 'back' } } }); };
+function showInfo() {
+  $('infoBody').innerHTML = `<div class="rcode" id="rcodeBig">${esc(code)}</div>` + (G ? G.p.map(p => `<div class="lrow"><span>${p.auto || p.bot ? '🤖 ' : ''}${esc(p.name)}${p.uid === me.id ? ' ★' : ''}</span>`
+    + (host && p.uid && p.uid !== me.id ? `<button class="tg kk" data-k="${p.uid}">${t('kick')}</button>` : '') + '</div>').join('') : '');
+  $('info').classList.remove('hidden');
+}
+$('infoBtn').onclick = showInfo;
+$('info').onclick = e => {
+  const k = e.target.closest('.kk');
+  if (k && host) { kick(k.dataset.k); showInfo(); }
+  else if (e.target.id === 'rcodeBig') { if (navigator.clipboard) navigator.clipboard.writeText(code); toast(t('copied')); }
+  else if (e.target.closest('#infoX') || e.target.id === 'info') $('info').classList.add('hidden');
+};
 
 /* themes: day/night, 10 tables, 10 tile styles */
 const TABLES = [['#31497b', '#141f3d'], ['#1f7a4a', '#0d3b25'], ['#8a2c3c', '#3a0f19'], ['#5b3f9a', '#1d1238'], ['#b98a4e', '#5c3d1c'], ['#1c8a93', '#0a3a40'], ['#4a4f5a', '#14161b'], ['#d9693a', '#5a2210'], ['#c0507a', '#4a1230'], ['#6ba6d6', '#1d3a57']];
 const TILES = [['#fffdf4', '#e7dfc6', '#b3a781', '#4c5372', '#10152a', '#1a203640'], ['#3a3a42', '#16161b', '#000000', '#ffffff', '#cfd3e6', '#ffffff55'], ['#3f7be0', '#1b3f94', '#102a66', '#ffffff', '#dbe6ff', '#ffffff66'],
   ['#2fbf86', '#0f6a4b', '#094a34', '#ffffff', '#d4ffe9', '#ffffff66'], ['#e5484d', '#8f1d24', '#5e1117', '#ffffff', '#ffe0e0', '#ffffff66'], ['#ffe08a', '#d9a521', '#9a7312', '#3a2a00', '#1a1200', '#3a2a0066'],
   ['#c98f56', '#8c5a2d', '#5a3a1a', '#2a1a0a', '#120a04', '#2a1a0a66'], ['#8b5cf6', '#4c2a9c', '#311a6b', '#ffffff', '#ebe0ff', '#ffffff66'], ['#b8f2d8', '#7ed3b0', '#4a9a7c', '#17493a', '#0a251c', '#17493a55'], ['#ffffff55', '#ffffff22', '#ffffff44', '#ffffff', '#d8e6ff', '#ffffff66']];
+const TABLES_L = [['#8fb8ff', '#5f8fe0'], ['#8fe3b8', '#4fb88a'], ['#ffb88f', '#e8864f'], ['#b9a6ff', '#8a73e0'], ['#e6cf9a', '#c4a35f'], ['#7fdde8', '#3fb0c0'], ['#ffa6c4', '#e0709a'], ['#f3e07a', '#d4bc3a'], ['#b5d3a0', '#86ad6f'], ['#cfd6e4', '#9aa6bd']];
 let th = {}; try { th = JSON.parse(localStorage.getItem('dom_theme')) || {}; } catch {}
-th = { mode: th.mode === 'light' ? 'light' : 'dark', table: (th.table | 0) % 10, tile: (th.tile | 0) % 10 };
+th = { mode: th.mode === 'light' ? 'light' : 'dark', table: (th.table | 0) % 10, tableL: (th.tableL | 0) % 10, tile: (th.tile | 0) % 10 };
 function applyTheme() {
-  const r = document.documentElement, k = TILES[th.tile];
-  r.dataset.mode = th.mode; r.style.setProperty('--felt1', TABLES[th.table][0]); r.style.setProperty('--felt2', TABLES[th.table][1]);
+  const r = document.documentElement, k = TILES[th.tile], lt = th.mode === 'light', TB = lt ? TABLES_L : TABLES, ti = lt ? th.tableL : th.table;
+  r.dataset.mode = th.mode; r.style.setProperty('--felt1', TB[ti][0]); r.style.setProperty('--felt2', TB[ti][1]);
   ['t1', 't2', 'te', 'p1', 'p2', 'dv'].forEach((n, i) => r.style.setProperty('--' + n, k[i]));
   localStorage.setItem('dom_theme', JSON.stringify(th));
-  $('tblGrid').querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', i === th.table));
+  $('tblGrid').innerHTML = TB.map(([a, b], i) => `<button data-i="${i}" class="${i === ti ? 'on' : ''}" style="background:radial-gradient(circle,${a},${b})"></button>`).join('');
   $('tileGrid').querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', i === th.tile));
-  $('mDark').classList.toggle('on', th.mode === 'dark'); $('mLight').classList.toggle('on', th.mode === 'light');
+  $('mDark').classList.toggle('on', !lt); $('mLight').classList.toggle('on', lt);
 }
-$('tblGrid').innerHTML = TABLES.map(([a, b], i) => `<button data-i="${i}" style="background:radial-gradient(circle,${a},${b})"></button>`).join('');
 $('tileGrid').innerHTML = TILES.map((k, i) => `<button data-i="${i}" style="background:linear-gradient(145deg,${k[0]},${k[1]});color:${k[4]}">●</button>`).join('');
-$('tblGrid').onclick = e => { const b = e.target.closest('button'); if (b) { th.table = +b.dataset.i; applyTheme(); } };
+$('tblGrid').onclick = e => { const b = e.target.closest('button'); if (b) { th[th.mode === 'light' ? 'tableL' : 'table'] = +b.dataset.i; applyTheme(); } };
 $('tileGrid').onclick = e => { const b = e.target.closest('button'); if (b) { th.tile = +b.dataset.i; applyTheme(); } };
 $('mDark').onclick = () => { th.mode = 'dark'; applyTheme(); }; $('mLight').onclick = () => { th.mode = 'light'; applyTheme(); };
 $('pv').innerHTML = tile(6, 6, '', 'v') + tile(5, 3, '', 'v') + tile(2, 0, '', 'v');

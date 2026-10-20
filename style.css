@@ -130,3 +130,21 @@ html[data-mode=light] #dock{background:linear-gradient(transparent,#ffffffd9 40%
 #chatBar{display:flex;gap:.4rem;width:100%;max-width:26rem}
 .react{position:fixed;left:50%;top:38%;z-index:70;font-size:6rem;pointer-events:none;animation:reactpop 2s ease-out forwards}
 @keyframes reactpop{0%{transform:translate(-50%,-50%) scale(0);opacity:0}15%{transform:translate(-50%,-50%) scale(1.3);opacity:1}30%{transform:translate(-50%,-50%) scale(1)}85%{opacity:1}100%{transform:translate(-50%,-90%) scale(1);opacity:0}}
+
+/* compact phone top area: stacked scoreboard, vertical icon column */
+#gtop{justify-content:flex-start;padding:.4rem .6rem;padding-top:max(.4rem,env(safe-area-inset-top))}
+#sc{flex-direction:column;align-items:flex-start;gap:.2rem}
+.sr{display:flex;align-items:center;gap:.3rem}
+.tm{padding:.05rem .7rem;font-size:.78rem;max-width:58vw}.tm b{font-size:.95rem;margin-inline-start:.15rem}
+.wn{min-width:1.3rem;height:1.3rem;border-radius:50%;background:var(--gold);color:#2a1d00;font-weight:900;font-size:.75rem;display:grid;place-items:center}
+#side{position:absolute;right:.4rem;top:calc(.4rem + env(safe-area-inset-top));z-index:8;display:flex;flex-direction:column;gap:.25rem}
+#side .icon{width:1.9rem;height:1.9rem;font-size:.95rem;border-radius:.6rem;background:#0b1330b3;border:1px solid #ffffff2b;color:#fff}
+#opps{padding:0 2.6rem 0 .5rem}
+.seat{font-size:.72rem;padding:.2rem .5rem .2rem .25rem}.seat .av{width:1.4rem;height:1.4rem}
+/* drag & drop */
+#hand{touch-action:pan-x;user-select:none;-webkit-user-select:none}
+#hand .tile.ok{cursor:grab}
+.tile.drag{position:fixed;z-index:85;pointer-events:none;transform:scale(1.15) rotate(-4deg);box-shadow:0 14px 28px #000a;transition:none}
+#hand .tile.lifted{opacity:.2!important;transform:none!important;box-shadow:none}
+#stage.dz{outline:2px dashed #ffffff77;outline-offset:-4px;border-radius:1rem}
+#board .tile.hot{box-shadow:0 0 0 3px var(--mint),0 0 22px var(--mint)}

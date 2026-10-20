@@ -40,6 +40,7 @@ Object.assign(D.ar, { free:'حرّ (3 لاعبين)', needN:'يجب حضور {n}
 Object.assign(D.en, { free:'Free (3 players)', needN:'{n} players are needed to start', idleWarn:'Still there? A robot will play for you in', idleAuto:'away — a robot plays for them', left:'left the room — a robot plays for them', botPlays:'🤖 A robot is playing for you', imBack:"I'm back", kicked:'You were removed from the room', kickedN:'was removed — a robot plays for them', kick:'Remove', roomInfo:'Room info', copied:'Code copied', close:'Close' });
 Object.assign(D.fr, { free:'Libre (3 joueurs)', needN:'{n} joueurs requis pour commencer', idleWarn:'Toujours là ? Un robot jouera à votre place dans', idleAuto:'absent — un robot joue à sa place', left:'a quitté la salle — un robot joue à sa place', botPlays:'🤖 Un robot joue à votre place', imBack:'Je suis de retour', kicked:'Vous avez été exclu de la salle', kickedN:'a été exclu — un robot joue à sa place', kick:'Exclure', roomInfo:'Infos de la salle', copied:'Code copié', close:'Fermer' });
 D.ar.chat = 'اكتب رسالة…'; D.en.chat = 'Type a message…'; D.fr.chat = 'Écrire un message…';
+D.ar.addBot = 'إضافة روبوت'; D.en.addBot = 'Add a robot'; D.fr.addBot = 'Ajouter un robot';
 let L = localStorage.getItem('lang') || 'ar';
 export const lang = () => L;
 export const t = k => (D[L] && D[L][k]) || k;

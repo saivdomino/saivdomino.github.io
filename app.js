@@ -6,7 +6,7 @@ import { sfx, isOn, toggle } from './sound.js';
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = i => document.getElementById(i);
 const esc = s => String(s).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
-const TAUNTS = ['مليح', 'كتل', 'بلع', 'نزيدك خطرة', 'لا عحبك', 'راسي'];
+const TAUNTS = ['مليح', 'كتل', 'بلع', 'نزيدك خطرة', 'لا عجبك', 'راسي'];
 
 let me = null, profile = null, G = null, seat = 0, ch = null, host = false, code = '';
 let cur = 'auth', T, tt, quiet = false, savedMid = null, graceMv = -1, lobby = [], assign = {}, pend = null;
@@ -31,7 +31,7 @@ const tn = k => tnames[k] || t(k ? 'team2' : 'team1');
 
 /* ---------- views / history ---------- */
 const show = v => { cur = v; document.body.dataset.v = v; document.querySelectorAll('.v').forEach(e => e.classList.toggle('hidden', e.id !== 'v-' + v)); };
-const toast = m => { const e = $('toast'); e.textContent = m; e.classList.remove('hidden'); clearTimeout(tt); tt = setTimeout(() => e.classList.add('hidden'), 2500); };
+const toast = (m, ms = 2500) => { const e = $('toast'); e.textContent = m; e.classList.remove('hidden'); clearTimeout(tt); tt = setTimeout(() => e.classList.add('hidden'), ms); };
 function leave() { clearSess(); clearTimeout(T); clearTimeout(IW); clearTimeout(IA); hideIdle(); if (ch) { sb.removeChannel(ch); ch = null; } G = null; host = false; show('menu'); }
 window.onpopstate = () => {
   if (quiet) { quiet = false; return; }
@@ -364,7 +364,7 @@ function render() {
   $('backG').classList.toggle('hidden', !g.over);
   $('backBar').classList.toggle('hidden', !mine.auto);
   if (mine.auto || g.turn !== seat || g.roundOver) hideIdle();
-  $('infoBtn').classList.toggle('hidden', !ch);
+  $('infoBtn').classList.toggle('hidden', !ch); $('chatBtn').classList.toggle('hidden', !ch); if (!ch) $('chatBar').classList.add('hidden');
   if (!$('info').classList.contains('hidden')) showInfo();
   if (!my) $('choose').classList.add('hidden');
   document.querySelectorAll('.tb').forEach(b => b.disabled = !canTaunt());
@@ -384,11 +384,13 @@ $('cl').onclick = () => choose('L'); $('cr').onclick = () => choose('R');
 $('drawBtn').onclick = () => send({ t: 'draw' });
 
 /* taunts: only on my turn, or the moment I finish it */
-$('taunts').innerHTML = TAUNTS.map(x => `<button class="btn alt tb" disabled>${x}</button>`).join('');
+$('taunts').innerHTML = TAUNTS.map(x => `<button class="btn alt tb" disabled>${x}</button>`).join('')
+  + [['😂', 'laugh'], ['😡', 'angry'], ['😭', 'cry']].map(([e, k]) => `<button class="btn alt tb" data-s="${k}" data-e="${e}" disabled>${e}</button>`).join('');
 $('taunts').onclick = e => {
   const b = e.target.closest('.tb'); if (!b || !canTaunt()) return;
-  const m = `${profile ? profile.username : ''}: ${b.textContent}`;
-  toast(m); sfx.taunt(); if (ch) ch.send({ type: 'broadcast', event: 'taunt', payload: m });
+  const k = b.dataset.s, em = b.dataset.e, m = `${profile ? profile.username : ''}: ${em || b.textContent}`;
+  toast(m); if (k) { sfx[k](); bigReact(em); } else sfx.taunt();
+  if (ch) ch.send({ type: 'broadcast', event: 'taunt', payload: { m, s: k, e: em } });
 };
 
 /* ---------- vs bot ---------- */
@@ -444,7 +446,11 @@ function joinRoom(c, h, g0 = null, s0 = 0) {
       if (G && G.kicked && G.kicked.includes(u)) return ch.send({ type: 'broadcast', event: 'kick', payload: { uid: u } });
       sendCfg(); ch.send({ type: 'broadcast', event: 'tnames', payload: tnames }); ch.send({ type: 'broadcast', event: 'assign', payload: assign }); if (G) ch.send({ type: 'broadcast', event: 'state', payload: G });
     })
-    .on('broadcast', { event: 'taunt' }, ({ payload }) => { sfx.taunt(); toast(payload); })
+    .on('broadcast', { event: 'taunt' }, ({ payload }) => {
+      const p = typeof payload === 'string' ? { m: payload } : payload;
+      if (p.s && p.s !== 'chat' && sfx[p.s]) sfx[p.s](); else if (p.s !== 'chat') sfx.taunt(); else sfx.click();
+      if (p.e) bigReact(p.e); toast(String(p.m).slice(0, 120), p.s === 'chat' ? 4000 : 2500);
+    })
     .subscribe(async st => {
       if (st !== 'SUBSCRIBED') return; // also fires again after every automatic reconnect
       await ch.track({ uid: me.id, name: profile.username, at: Date.now() });
@@ -503,6 +509,16 @@ function showInfo() {
   $('info').classList.remove('hidden');
 }
 $('infoBtn').onclick = showInfo;
+function bigReact(e) { const d = document.createElement('div'); d.className = 'react'; d.textContent = e; document.body.appendChild(d); setTimeout(() => d.remove(), 2000); }
+/* online chat: ephemeral, shown like a taunt, never stored */
+let lastChat = 0;
+$('chatBtn').onclick = () => { $('chatBar').classList.toggle('hidden'); if (!$('chatBar').classList.contains('hidden')) $('chatIn').focus(); };
+$('chatSend').onclick = () => {
+  const v = $('chatIn').value.trim().slice(0, 80); if (!v || !ch || Date.now() - lastChat < 1500) return;
+  lastChat = Date.now(); const m = `${profile.username}: ${v}`;
+  toast(m, 4000); ch.send({ type: 'broadcast', event: 'taunt', payload: { m, s: 'chat' } }); $('chatIn').value = '';
+};
+$('chatIn').onkeydown = e => { if (e.key === 'Enter') $('chatSend').click(); };
 $('info').onclick = e => {
   const k = e.target.closest('.kk');
   if (k && host) { kick(k.dataset.k); showInfo(); }

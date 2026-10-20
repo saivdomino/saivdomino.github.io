@@ -126,3 +126,7 @@ html[data-mode=light] .lrow b,html[data-mode=light] .stat b{color:#b97d00}
 .tg.kk{background:#ff6b6b33;border:1px solid var(--coral);color:var(--coral)}
 .tm{max-width:32vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 html[data-mode=light] #dock{background:linear-gradient(transparent,#ffffffd9 40%)}
+
+#chatBar{display:flex;gap:.4rem;width:100%;max-width:26rem}
+.react{position:fixed;left:50%;top:38%;z-index:70;font-size:6rem;pointer-events:none;animation:reactpop 2s ease-out forwards}
+@keyframes reactpop{0%{transform:translate(-50%,-50%) scale(0);opacity:0}15%{transform:translate(-50%,-50%) scale(1.3);opacity:1}30%{transform:translate(-50%,-50%) scale(1)}85%{opacity:1}100%{transform:translate(-50%,-90%) scale(1);opacity:0}}

@@ -6,7 +6,7 @@ import { sfx, isOn, toggle } from './sound.js';
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = i => document.getElementById(i);
 const esc = s => String(s).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
-const TAUNTS = ['مليح', 'كتل', 'بلع', 'نزيدك خطرة', 'لا عجبك', 'راسي'];
+const TAUNTS = ['مليح', 'كتل', 'بلع', 'نزيدك خطرة', 'لعبك', 'راسي'];
 
 let me = null, profile = null, G = null, seat = 0, ch = null, host = false, code = '';
 let cur = 'auth', T, tt, quiet = false, savedMid = null, graceMv = -1, lobby = [], assign = {}, pend = null;
@@ -38,7 +38,7 @@ window.onpopstate = () => {
   if (cur === 'game' || cur === 'lobby') { if (confirm(t('leave'))) leave(); else history.pushState({ g: 1 }, ''); }
 };
 const goBack = () => { quiet = true; leave(); history.back(); };
-$('backL').onclick = goBack; $('backG').onclick = goBack;
+$('backL').onclick = goBack;
 
 /* ---------- auth + profile ---------- */
 $('signup').onclick = async () => {
@@ -340,7 +340,7 @@ function render() {
   const my = g.turn === seat && !g.roundOver && !g.over && !mine.auto;
   fx(g);
   const nm = k => esc((g.names && g.names[k]) || (g.free ? g.p[k].name : t(k ? 'team2' : 'team1'))), ser = g.wins && g.wins.some(Boolean) ? `<span class="ser">${g.wins.join(' - ')}</span>` : '';
-  $('sc').innerHTML = g.sc.map((v, k) => `<span class="tm ${mine.team === k ? 'me' : ''}">${nm(k)}<b>${v}</b></span>`).join('') + ser + `<span class="tg2">/${g.target}</span>`;
+  $('sc').innerHTML = g.sc.map((v, k) => `<div class="sr"><span class="tm ${mine.team === k ? 'me' : ''}">${nm(k)}: <b>${v}</b></span><span class="wn">${(g.wins || [])[k] || 0}</span>${k === 0 ? `<span class="tg2">🎯 ${g.target}</span>` : ''}</div>`).join('');
   const order = []; for (let k = g.n - 1; k >= 1; k--) order.push((seat + k) % g.n); // all others on top: left → right
   $('opps').className = g.n > 2 ? 'many' : '';
   $('opps').innerHTML = order.map(i => {
@@ -359,9 +359,8 @@ function render() {
     + (g.over && g.wins ? `<div class="ser2">${g.wins.map((w, k) => `${nm(k)} <b>${w}</b>`).join(' - ')}</div>` : '')
     + `<small style="text-align:center;opacity:.7">${t('tilesLeft')}</small>`
     + g.p.map(p => `<div class="rp"><span class="av" style="background:hsl(${hue(p.name)} 65% 50%)">${esc([...p.name][0])}</span><span class="nm2">${esc(p.name)}</span><div class="tl">${p.hand.length ? p.hand.map(([a, b]) => tile(a, b, '', 'sm')).join('') : '🏁'}</div><b>${pips(p.hand)}</b></div>`).join('')
-    + (g.over ? `<div class="ra"><button class="btn" id="again">${t('again')}</button></div>` : '');
+    + (g.over ? `<div class="ra"><button class="btn" id="again">${t('again')}</button><button class="btn alt" id="backR">${t('back')}</button></div>` : '');
   $('drawBtn').classList.toggle('hidden', !(my && !lg.length && g.n === 2 && g.bone.length));
-  $('backG').classList.toggle('hidden', !g.over);
   $('backBar').classList.toggle('hidden', !mine.auto);
   if (mine.auto || g.turn !== seat || g.roundOver) hideIdle();
   $('infoBtn').classList.toggle('hidden', !ch); $('chatBtn').classList.toggle('hidden', !ch); if (!ch) $('chatBar').classList.add('hidden');
@@ -371,7 +370,7 @@ function render() {
 }
 addEventListener('resize', () => render());
 $('hand').onclick = e => {
-  const el = e.target.closest('[data-i]'); if (!el || !G) return;
+  const el = e.target.closest('[data-i]'); if (!el || !G || Date.now() - dragEnd < 400) return;
   const i = +el.dataset.i;
   if (G.turn !== seat || G.roundOver || G.over) return;
   const o = legal(G, seat).filter(x => x[0] === i);
@@ -382,6 +381,48 @@ $('hand').onclick = e => {
 const choose = side => { $('choose').classList.add('hidden'); send({ t: 'play', i: pend, side }); };
 $('cl').onclick = () => choose('L'); $('cr').onclick = () => choose('R');
 $('drawBtn').onclick = () => send({ t: 'draw' });
+
+/* drag & drop: drag a glowing tile onto the board (drop near the end you want); tap still works */
+let drag = null, dragEnd = 0;
+const overStage = (x, y) => { const r = $('stage').getBoundingClientRect(); return x > r.left - 20 && x < r.right + 20 && y > r.top - 20 && y < r.bottom + 20; };
+function sideFor(i, x, y) {
+  const o = legal(G, seat).filter(v => v[0] === i); if (!o.length) return null;
+  if (o.length === 1 || !G.board.length) return o[0][1];
+  const d = k => { const el = bEls[key(G.board[k ? G.board.length - 1 : 0])]; if (!el) return 1e9; const r = el.getBoundingClientRect(); return Math.hypot(x - r.left - r.width / 2, y - r.top - r.height / 2); };
+  return d(0) <= d(1) ? 'L' : 'R';
+}
+function dragHint(x, y) {
+  const s = overStage(x, y) ? sideFor(drag.i, x, y) : null, B = G.board;
+  const els = !B.length ? [] : B.length === 1 ? [bEls[key(B[0])]] : [bEls[key(B[0])], bEls[key(B[B.length - 1])]];
+  document.querySelectorAll('#board .hot').forEach(x => x.classList.remove('hot'));
+  els.forEach((el, k) => el && !!s && (els.length === 1 || s === (k ? 'R' : 'L')) && el.classList.add('hot'));
+}
+function stopDrag(d) { d.g.remove(); d.el.classList.remove('lifted'); $('stage').classList.remove('dz'); document.querySelectorAll('#board .hot').forEach(x => x.classList.remove('hot')); dragEnd = Date.now(); }
+$('hand').addEventListener('pointerdown', e => {
+  const el = e.target.closest('.tile.ok'); if (!el || !G || e.button) return;
+  drag = { el, i: +el.dataset.i, x0: e.clientX, y0: e.clientY, on: false, id: e.pointerId };
+});
+addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  if (!drag.on) {
+    if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 10) return;
+    const r = drag.el.getBoundingClientRect(), g = drag.el.cloneNode(true);
+    g.className = 'tile v drag'; g.removeAttribute('data-i'); g.style.width = r.width + 'px'; g.style.height = r.height + 'px'; document.body.appendChild(g);
+    Object.assign(drag, { on: true, g, w: r.width, h: r.height }); drag.el.classList.add('lifted'); $('stage').classList.add('dz'); sfx.click();
+    try { $('hand').setPointerCapture(e.pointerId); } catch {}
+  }
+  drag.g.style.left = e.clientX - drag.w / 2 + 'px'; drag.g.style.top = e.clientY - drag.h * 1.3 + 'px';
+  dragHint(e.clientX, e.clientY - drag.h * .8);
+});
+addEventListener('pointerup', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const d = drag; drag = null; if (!d.on) return;
+  const px = e.clientX, py = e.clientY - d.h * .8; stopDrag(d);
+  if (!G || G.turn !== seat || G.roundOver || G.over) return;
+  const side = overStage(px, py) ? sideFor(d.i, px, py) : null;
+  if (side) send({ t: 'play', i: d.i, side });
+});
+addEventListener('pointercancel', () => { if (drag && drag.on) stopDrag(drag); drag = null; });
 
 /* taunts: only on my turn, or the moment I finish it */
 $('taunts').innerHTML = TAUNTS.map(x => `<button class="btn alt tb" disabled>${x}</button>`).join('')
@@ -500,7 +541,7 @@ document.querySelectorAll('.snd').forEach(b => {
 });
 $('exitG').onclick = () => history.back();
 ['tn1', 'tn2'].forEach(id => $(id).oninput = () => { tnames = [$('tn1').value.trim(), $('tn2').value.trim()]; if (ch && host) ch.send({ type: 'broadcast', event: 'tnames', payload: tnames }); renderLobby(); });
-$('result').onclick = e => { if (e.target.closest('#again')) send({ t: 'again' }); };
+$('result').onclick = e => { if (e.target.closest('#again')) send({ t: 'again' }); else if (e.target.closest('#backR')) goBack(); };
 $('idleX').onclick = () => { hideIdle(); if (authority()) idleTimers(G); else ch.send({ type: 'broadcast', event: 'intent', payload: { uid: me.id, seat, a: { t: 'keep' } } }); };
 $('imBack').onclick = () => { if (authority()) { G.p[seat].auto = false; G.p[seat].off = false; push(); } else ch.send({ type: 'broadcast', event: 'intent', payload: { uid: me.id, seat, a: { t: 'back' } } }); };
 function showInfo() {

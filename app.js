@@ -25,7 +25,7 @@ function resume() {
   history.pushState({ g: 1 }, ''); show('game'); tick(); return true;
 }
 
-let cfgN = 2, IW, IA, idleCd, offT = {};
+let cfgN = 2, lbots = [], IW, IA, idleCd, offT = {};
 let tnames = ['', '']; // group names chosen by the host
 const tn = k => tnames[k] || t(k ? 'team2' : 'team1');
 
@@ -201,7 +201,7 @@ function botPick(g) {
 /* ---------- turn loop (offline or room host acts as authority) ---------- */
 /* ---------- online: idle or departed player -> a robot plays in his place ---------- */
 const notice = m => { toast(m); if (ch) ch.send({ type: 'broadcast', event: 'notice', payload: m }); };
-const sendCfg = () => ch && ch.send({ type: 'broadcast', event: 'cfg', payload: cfgN });
+const sendCfg = () => { if (!ch) return; ch.send({ type: 'broadcast', event: 'cfg', payload: cfgN }); ch.send({ type: 'broadcast', event: 'bots', payload: lbots }); };
 function idleTimers(g) { // room host only: 15s idle -> warning, 5s later the robot takes over
   clearTimeout(IW); clearTimeout(IA);
   if (!ch || !host || g.over || g.roundOver) return;
@@ -258,7 +258,7 @@ async function saveIfOver() {
 
 /* ---------- rendering ---------- */
 const P = [[], [4], [0, 8], [0, 4, 8], [0, 2, 6, 8], [0, 2, 4, 6, 8], [0, 2, 3, 5, 6, 8]];
-const half = n => `<div class="h">${[...Array(9).keys()].map(i => `<i class="${P[n].includes(i) ? 'on' : ''}"></i>`).join('')}</div>`;
+const half = n => `<div class="h">${P[n].map(i => `<i class="on p${i}"></i>`).join('')}</div>`; // only the pips that exist
 const tile = (a, b, x = '', c = '') => `<div class="tile ${c}" ${x}>${half(a)}${half(b)}</div>`;
 const canTaunt = () => G && !G.over && (G.turn === seat || G.mv <= graceMv);
 const hue = s => [...s].reduce((a, c) => a + c.charCodeAt(0), 0) * 47 % 360;
@@ -306,19 +306,28 @@ function drawBoard(g) {
   });
   for (const k in bEls) if (!seen.has(k)) { bEls[k].remove(); delete bEls[k]; }
 }
-function confetti() {
-  const cols = ['#ffc247', '#4ade9b', '#ff6b6b', '#6ea8ff', '#fff'];
-  for (let i = 0; i < 46; i++) {
-    const e = document.createElement('i'); e.className = 'cf';
-    e.style.cssText = `left:${Math.random() * 100}vw;background:${cols[i % 5]};animation-delay:${Math.random() * .6}s;animation-duration:${1.8 + Math.random()}s`;
-    document.body.appendChild(e); setTimeout(() => e.remove(), 3500);
+let cf = null; // one half-resolution canvas instead of dozens of animated elements
+function confetti(n = 60) {
+  if (!cf) {
+    const c = document.createElement('canvas'); c.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;z-index:79;pointer-events:none';
+    c.width = Math.ceil(innerWidth / 2); c.height = Math.ceil(innerHeight / 2); document.body.appendChild(c);
+    cf = { c, x: c.getContext('2d'), p: [], run: false };
   }
+  const cols = ['#ffc247', '#4ade9b', '#ff6b6b', '#6ea8ff', '#ffffff'], W = cf.c.width, H = cf.c.height;
+  for (let i = 0; i < n; i++) cf.p.push({ x: Math.random() * W, y: -10 - Math.random() * 60, vx: (Math.random() - .5) * 2, vy: 1.5 + Math.random() * 2.5, w: 3 + Math.random() * 3, h: 5 + Math.random() * 4, r: Math.random() * 6, vr: (Math.random() - .5) * .3, c: cols[i % 5] });
+  if (cf.run) return; cf.run = true;
+  const step = () => {
+    cf.x.clearRect(0, 0, W, H); cf.p = cf.p.filter(q => q.y < H + 10);
+    cf.p.forEach(q => { q.x += q.vx; q.y += q.vy; q.r += q.vr; cf.x.save(); cf.x.translate(q.x, q.y); cf.x.rotate(q.r); cf.x.fillStyle = q.c; cf.x.fillRect(-q.w / 2, -q.h / 2, q.w, q.h); cf.x.restore(); });
+    if (cf.p.length) requestAnimationFrame(step); else { cf.c.remove(); cf = null; }
+  };
+  requestAnimationFrame(step);
 }
 function special(cls, big, sub, ms = 3400) {
   const e = document.createElement('div'); e.className = 'sp ' + cls;
   e.innerHTML = `<div class="spb">${[...big].map((c, i) => `<span style="--i:${i}">${c === ' ' ? '&nbsp;' : esc(c)}</span>`).join('')}</div><div class="sps">${esc(sub)}</div>`;
   document.body.appendChild(e); setTimeout(() => e.remove(), ms);
-  confetti(); setTimeout(confetti, 700); if (cls.startsWith('capot')) setTimeout(confetti, 1500);
+  confetti(70); if (cls.startsWith('capot')) setTimeout(() => confetti(70), 900);
 }
 function fx(g) { // sounds + effects from state changes
   const f = fxS, mineTeam = g.p[seat].team;
@@ -354,8 +363,8 @@ function render() {
     : g.roundOver ? (g.roundOver.w < 0 ? t('tie') : (g.roundOver.w === mine.team ? t('youWin') : t('youLose'))) + (g.roundOver.pts ? ' +' + g.roundOver.pts : '')
     : my ? t('yourTurn') : t('wait') + ' ' + g.p[g.turn].name;
   $('msg').className = 'msg' + (my ? ' go' : '');
-  const ro = g.roundOver; $('result').classList.toggle('hidden', !ro);
-  if (ro) $('result').innerHTML = `<h3>${esc($('msg').textContent)}</h3>`
+  const ro = g.roundOver, rk = `${g.mid}|${g.round}|${g.over}|${g.sc}|${g.wins}`; $('result').classList.toggle('hidden', !ro);
+  if (ro && $('result').dataset.k !== rk) $('result').dataset.k = rk, $('result').innerHTML = `<h3>${esc($('msg').textContent)}</h3>`
     + (g.over && g.wins ? `<div class="ser2">${g.wins.map((w, k) => `${nm(k)} <b>${w}</b>`).join(' - ')}</div>` : '')
     + `<small style="text-align:center;opacity:.7">${t('tilesLeft')}</small>`
     + g.p.map(p => `<div class="rp"><span class="av" style="background:hsl(${hue(p.name)} 65% 50%)">${esc([...p.name][0])}</span><span class="nm2">${esc(p.name)}</span><div class="tl">${p.hand.length ? p.hand.map(([a, b]) => tile(a, b, '', 'sm')).join('') : '🏁'}</div><b>${pips(p.hand)}</b></div>`).join('')
@@ -444,8 +453,8 @@ $('startBot').onclick = () => {
 };
 
 /* ---------- online private rooms (Realtime Broadcast + Presence) ---------- */
-$('createRoom').onclick = () => { tnames = ['', '']; $('tn1').value = $('tn2').value = ''; cfgN = +$('cm').value; joinRoom(Math.random().toString(36).slice(2, 7).toUpperCase(), true); };
-$('joinRoom').onclick = () => { const c = $('rcode').value.trim().toUpperCase(); if (c) { tnames = ['', '']; joinRoom(c, false); } };
+$('createRoom').onclick = () => { tnames = ['', '']; $('tn1').value = $('tn2').value = ''; cfgN = +$('cm').value; lbots = []; joinRoom(Math.random().toString(36).slice(2, 7).toUpperCase(), true); };
+$('joinRoom').onclick = () => { const c = $('rcode').value.trim().toUpperCase(); if (c) { tnames = ['', '']; lbots = []; joinRoom(c, false); } };
 function joinRoom(c, h, g0 = null, s0 = 0) {
   code = c; host = h; assign = {}; lobby = []; G = g0; seat = s0;
   ch = sb.channel('dom:' + c, { config: { broadcast: { self: false }, presence: { key: me.id } } });
@@ -465,6 +474,7 @@ function joinRoom(c, h, g0 = null, s0 = 0) {
       offT[key] = setTimeout(() => { const p = G && G.p[i]; if (!p || p.auto || p.bot) return; p.auto = true; p.off = true; notice(`${p.name} · ${t('left')}`); push(); }, 8000);
     })
     .on('broadcast', { event: 'cfg' }, ({ payload }) => { cfgN = payload; renderLobby(); })
+    .on('broadcast', { event: 'bots' }, ({ payload }) => { lbots = payload; renderLobby(); })
     .on('broadcast', { event: 'notice' }, ({ payload }) => toast(payload))
     .on('broadcast', { event: 'idle' }, ({ payload }) => { if (payload.uid === me.id) warnMe(); })
     .on('broadcast', { event: 'kick' }, ({ payload }) => { if (payload.uid === me.id) { toast(t('kicked')); goBack(); } })
@@ -504,27 +514,38 @@ function joinRoom(c, h, g0 = null, s0 = 0) {
   saveSess();
 }
 function renderLobby() {
-  $('lobbyInfo').textContent = `${t('players')} ${lobby.length}/${cfgN} · ${cfgN === 2 ? '1v1' : cfgN === 4 ? '2v2' : t('free')}`;
+  const all = lobby.concat(lbots);
+  $('lobbyInfo').textContent = `${t('players')} ${all.length}/${cfgN} · ${cfgN === 2 ? '1v1' : cfgN === 4 ? '2v2' : t('free')}`;
   $('tnbox').classList.toggle('hidden', cfgN !== 4);
-  $('lobbylist').innerHTML = lobby.map(p => `<div class="lrow"><span>${esc(p.name)}</span><span class="flex gap-2">`
+  $('addBot').disabled = all.length >= cfgN;
+  $('lobbylist').innerHTML = all.map(p => `<div class="lrow"><span>${esc(p.name)}${p.bot ? ` · ${t(p.lvl)}` : ''}</span><span class="flex gap-2">`
     + (cfgN === 4 ? `<button class="tg t${assign[p.uid] === 1 ? 2 : 1}" data-u="${p.uid}" ${host ? '' : 'disabled'}>${esc(tn(assign[p.uid] === 1 ? 1 : 0))}</button>` : '')
-    + (host && p.uid !== me.id ? `<button class="tg kk" data-k="${p.uid}">✕</button>` : '') + '</span></div>').join('');
+    + (host && p.bot ? `<button class="tg kk rb" data-b="${p.uid}">✕</button>` : host && p.uid !== me.id ? `<button class="tg kk" data-k="${p.uid}">✕</button>` : '') + '</span></div>').join('');
 }
+function removeBot(uid) { lbots = lbots.filter(b => b.uid !== uid); delete assign[uid]; sendCfg(); ch.send({ type: 'broadcast', event: 'assign', payload: assign }); renderLobby(); }
+$('addBot').onclick = () => { // host fills empty seats with robots (teammates or opponents via the group button)
+  if (!host || lobby.length + lbots.length >= cfgN) return;
+  const n = 1 + Math.max(0, ...lbots.map(x => +x.uid.slice(3))), z = Object.values(assign).filter(v => v === 0).length, o = Object.values(assign).filter(v => v === 1).length;
+  lbots.push({ uid: 'bot' + n, name: '🤖 ' + n, bot: true, lvl: $('rbl').value }); assign['bot' + n] = z <= o ? 0 : 1;
+  sendCfg(); ch.send({ type: 'broadcast', event: 'assign', payload: assign }); renderLobby();
+};
 $('lobbylist').onclick = e => {
+  const rb = e.target.closest('.rb'); if (rb && host) return removeBot(rb.dataset.b);
   const k = e.target.closest('.kk'); if (k && host) return kick(k.dataset.k);
   const b = e.target.closest('.tg:not(.kk)'); if (!b || !host) return;
   assign[b.dataset.u] = assign[b.dataset.u] === 1 ? 0 : 1;
   ch.send({ type: 'broadcast', event: 'assign', payload: assign }); renderLobby();
 };
 $('startRoom').onclick = () => {
-  if (lobby.length !== cfgN) return toast(t('needN').replace('{n}', cfgN));
+  const all = lobby.concat(lbots);
+  if (all.length !== cfgN) return toast(t('needN').replace('{n}', cfgN));
   let o;
   if (cfgN === 4) {
-    const t0 = lobby.filter(p => assign[p.uid] === 0), t1 = lobby.filter(p => assign[p.uid] === 1);
+    const t0 = all.filter(p => assign[p.uid] === 0), t1 = all.filter(p => assign[p.uid] === 1);
     if (t0.length !== 2 || t1.length !== 2) return toast(t('needTeams'));
     o = [t0[0], t1[0], t0[1], t1[1]]; // seats alternate teams
-  } else o = lobby.slice(0, cfgN);
-  G = newGame(o.map(p => ({ uid: p.uid, name: p.name })), +$('rt').value, code, cfgN === 3);
+  } else o = all.slice(0, cfgN);
+  G = newGame(o.map(p => p.bot ? { uid: null, name: p.name, bot: 1, lvl: p.lvl } : { uid: p.uid, name: p.name }), +$('rt').value, code, cfgN === 3);
   G.names = cfgN === 4 ? [tn(0), tn(1)] : G.p.map(p => p.name);
   seat = G.p.findIndex(p => p.uid === me.id);
   show('game'); push();

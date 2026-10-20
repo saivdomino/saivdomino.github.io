@@ -6,7 +6,7 @@ import { sfx, isOn, toggle } from './sound.js';
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = i => document.getElementById(i);
 const esc = s => String(s).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
-const TAUNTS = ['مليح', 'كتل', 'بلع', 'نزيدك خطرة', 'لعبك', 'راسي'];
+const TAUNTS = ['مليح', 'كتل', 'بلع', 'نزيدك خطرة', 'لا عجبك', 'راسي'];
 
 let me = null, profile = null, G = null, seat = 0, ch = null, host = false, code = '';
 let cur = 'auth', T, tt, quiet = false, savedMid = null, graceMv = -1, lobby = [], assign = {}, pend = null;
